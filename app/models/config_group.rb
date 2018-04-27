@@ -1,5 +1,7 @@
 class ConfigGroup < ApplicationRecord
   audited
+  extend FriendlyId
+  friendly_id :name
   include Authorizable
   include Parameterizable::ByIdName
 

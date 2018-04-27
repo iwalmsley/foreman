@@ -387,6 +387,10 @@ Foreman::AccessControl.map do |permission_set|
                                       :"api/v2/common_parameters" => [:destroy],
                                       :"api/v2/parameters" => [:destroy, :reset]
                                   }
+    map.permission :edit_host_config_groups, { :host_editing => [:edit_host_config_groups],
+                                               :"api/v2/host_config_groups" => [:index, :create, :destroy]
+                                           }
+
   end
 
   permission_set.security_block :images do |map|
