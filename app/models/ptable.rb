@@ -3,11 +3,15 @@
 # A host object may contain a reference to one of these ptables or, alternatively, it may contain a
 # modified version of one of these in textual form
 class Ptable < Template
+  audited
+  has_many :audits, :as => :auditable, :class_name => Audited.audit_class.name
+
   include Authorizable
   extend FriendlyId
   friendly_id :name
   include Parameterizable::ByIdName
   include ValidateOsFamily
+  include DirtyAssociations
 
   class << self
     # we have to override the base_class because polymorphic associations does not detect it correctly, more details at
@@ -17,9 +21,6 @@ class Ptable < Template
     end
   end
   self.table_name = 'templates'
-
-  audited
-  has_many :audits, :as => :auditable, :class_name => Audited.audit_class.name
 
   before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups)
   has_many_hosts
@@ -36,6 +37,8 @@ class Ptable < Template
   scoped_search :on => :locked,  :complete_value => {:true => true, :false => false}
   scoped_search :on => :snippet, :complete_value => {:true => true, :false => false}
   scoped_search :on => :template
+  scoped_search :on => :vendor, :only_explicit => true, :complete_value => true
+  scoped_search :on => :default, :only_explicit => true, :complete_value => {:true => true, :false => false}
 
   scoped_search :on => :template, :complete_value => false, :rename => 'layout'
   scoped_search :on => :os_family, :rename => 'family', :complete_value => :true
@@ -43,6 +46,8 @@ class Ptable < Template
   alias_attribute :layout, :template
 
   attr_exportable :os_family
+
+  dirty_has_many_associations :operatingsystems
 
   # with proc support, default_scope can no longer be chained
   # include all default scoping here
@@ -62,5 +67,13 @@ class Ptable < Template
 
   def taxonomy_foreign_conditions
     { :ptable_id => id }
+  end
+
+  private
+
+  def import_custom_data(options)
+    import_oses(options)
+
+    self.os_family = self.operatingsystems.first.family if self.operatingsystem_ids.present?
   end
 end

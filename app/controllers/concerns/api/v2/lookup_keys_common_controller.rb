@@ -50,9 +50,10 @@ module Api::V2::LookupKeysCommonController
   def find_smart_variable
     id = params.keys.include?('smart_variable_id') ? params['smart_variable_id'] : params['id']
     @smart_variable   = VariableLookupKey.authorized(:view_external_variables).smart_variables.find_by_id(id.to_i) if id.to_i > 0
-    @smart_variable ||= (puppet_cond = { :puppetclass_id => @puppetclass.id } if @puppetclass
-                         VariableLookupKey.authorized(:view_external_variables).smart_variables.where(puppet_cond).find_by_key(id.to_s)
-                        )
+    @smart_variable ||= begin
+                          puppet_cond = { :puppetclass_id => @puppetclass.id } if @puppetclass
+                          VariableLookupKey.authorized(:view_external_variables).smart_variables.where(puppet_cond).find_by_key(id.to_s)
+                        end
     @smart_variable
   end
 
@@ -71,10 +72,11 @@ module Api::V2::LookupKeysCommonController
   def find_smart_class_parameter
     id = params.keys.include?('smart_class_parameter_id') ? params['smart_class_parameter_id'] : params['id']
     @smart_class_parameter = PuppetclassLookupKey.authorized(:view_external_parameters).smart_class_parameters.find_by_id(id.to_i) if id.to_i > 0
-    @smart_class_parameter ||= (puppet_cond = { 'environment_classes.puppetclass_id'=> @puppetclass.id } if @puppetclass
-                                env_cond = { 'environment_classes.environment_id' => @environment.id } if @environment
-                                PuppetclassLookupKey.authorized(:view_external_parameters).smart_class_parameters.where(puppet_cond).where(env_cond).where(:key => id).first
-                               )
+    @smart_class_parameter ||= begin
+                                 puppet_cond = { 'environment_classes.puppetclass_id'=> @puppetclass.id } if @puppetclass
+                                 env_cond = { 'environment_classes.environment_id' => @environment.id } if @environment
+                                 PuppetclassLookupKey.authorized(:view_external_parameters).smart_class_parameters.where(puppet_cond).where(env_cond).where(:key => id).first
+                               end
     @smart_class_parameter
   end
 
@@ -134,7 +136,7 @@ module Api::V2::LookupKeysCommonController
   end
 
   def cast_value(obj = :override_value, value = :value)
-    return unless params[obj] && params[obj].key?(value)
+    return unless params[obj]&.key?(value)
     param_value = params[obj][value]
     return if param_value.is_a?(Hash)
     params[obj][value] = param_value.to_s

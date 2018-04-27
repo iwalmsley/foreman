@@ -1,4 +1,6 @@
 class Filter < ApplicationRecord
+  audited :associated_with => :role
+
   include Taxonomix
   include Authorizable
   include TopbarCacheExpiry
@@ -36,7 +38,6 @@ class Filter < ApplicationRecord
     end
   end
 
-  audited :associated_with => :role
   belongs_to :role
   has_many :filterings, :autosave => true, :dependent => :destroy
   has_many :permissions, :through => :filterings
@@ -88,7 +89,7 @@ class Filter < ApplicationRecord
     resource_type.constantize
   rescue NameError => e
     Foreman::Logging.exception("unknown class #{resource_type}, ignoring", e)
-    return nil
+    nil
   end
 
   def unlimited?
@@ -109,7 +110,7 @@ class Filter < ApplicationRecord
 
   def resource_type
     type = @resource_type || filterings.first.try(:permission).try(:resource_type)
-    type.blank? ? nil : type
+    type.presence
   end
 
   def resource_class

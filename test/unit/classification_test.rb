@@ -692,7 +692,7 @@ class ClassificationTest < ActiveSupport::TestCase
                              :override => true, :key_type => 'array', :merge_overrides => false,
                              :default_value => '<%= [1,2] %>', :path => "organization\nos\nlocation",
                              :puppetclass => puppetclasses(:one))
-    assert_equal [1,2], HostInfoProviders::PuppetInfo.new(@host).puppetclass_parameters['base'][key.key]
+    assert_equal [1, 2], HostInfoProviders::PuppetInfo.new(@host).puppetclass_parameters['base'][key.key]
 
     as_admin do
       LookupValue.create! :lookup_key_id => key.id,
@@ -720,7 +720,7 @@ class ClassificationTest < ActiveSupport::TestCase
                                          :element_name => 'Organization 1',
                                          :managed => false}}},
                                          Classification::ValuesHashQuery.values_hash(@host, LookupKey.where(:id => [key])).raw)
-    assert_equal [3,4], HostInfoProviders::PuppetInfo.new(@host).puppetclass_parameters['base'][key.key]
+    assert_equal [3, 4], HostInfoProviders::PuppetInfo.new(@host).puppetclass_parameters['base'][key.key]
   end
 
   test 'enc should return correct values for multi-key matchers' do
@@ -734,7 +734,7 @@ class ClassificationTest < ActiveSupport::TestCase
     parent_hostgroup = FactoryBot.create(:hostgroup,
                                           :puppetclasses => [puppetclasses(:two)],
                                           :environment => environments(:production))
-    hostgroup.update_attributes(:parent => parent_hostgroup)
+    hostgroup.update(:parent => parent_hostgroup)
 
     FactoryBot.build(:lookup_value, :lookup_key_id => key.id, :match => "hostgroup=#{parent_hostgroup},organization=#{taxonomies(:organization1)}")
     lv = FactoryBot.create(:lookup_value, :lookup_key_id => key.id, :match => "hostgroup=#{hostgroup},organization=#{taxonomies(:organization1)}")

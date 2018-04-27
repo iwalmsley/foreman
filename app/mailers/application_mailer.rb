@@ -9,8 +9,8 @@ class ApplicationMailer < ActionMailer::Base
   def mail(headers = {}, &block)
     if headers.present?
       headers[:to] = utf8_encode(headers[:to])
-      headers[:subject] = "#{Setting[:email_subject_prefix]} #{headers[:subject]}" if (headers[:subject] && !Setting[:email_subject_prefix].blank?)
-      headers['X-Foreman-Server'] = URI.parse(Setting[:foreman_url]).host unless Setting[:foreman_url].blank?
+      headers[:subject] = "#{Setting[:email_subject_prefix]} #{headers[:subject]}" if (headers[:subject] && Setting[:email_subject_prefix].present?)
+      headers['X-Foreman-Server'] = URI.parse(Setting[:foreman_url]).host if Setting[:foreman_url].present?
     end
     super
   end
@@ -32,7 +32,7 @@ class ApplicationMailer < ActionMailer::Base
   def set_locale_for(user)
     old_loc = FastGettext.locale
     begin
-      FastGettext.set_locale(user.locale.blank? ? 'en' : user.locale)
+      FastGettext.set_locale(user.locale.presence || 'en')
       yield if block_given?
     ensure
       FastGettext.locale = old_loc if block_given?
@@ -50,7 +50,7 @@ class ApplicationMailer < ActionMailer::Base
   def utf8_encode(email)
     if email.present?
       address = email.split("@")
-      (address.count == 2) ? Mail::Encodings.decode_encode(address[0],:encode) + '@' + Mail::Encodings.decode_encode(address[1],:encode) : email
+      (address.count == 2) ? Mail::Encodings.decode_encode(address[0], :encode) + '@' + Mail::Encodings.decode_encode(address[1], :encode) : email
     end
   end
 

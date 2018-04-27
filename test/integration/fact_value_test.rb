@@ -8,7 +8,7 @@ class FactValueIntegrationTest < ActionDispatch::IntegrationTest
   end
 
   test "index page" do
-    assert_index_page(fact_values_path,"Fact Values",nil,true)
+    assert_index_page(fact_values_path, "Fact Values", nil, true)
   end
 
   test "host fact links" do
@@ -47,18 +47,18 @@ class ChildFactValueIntegrationTest < ActionDispatch::IntegrationTest
     visit fact_values_path
     assert page.has_link? @parent_name.name
 
-    #click on the parent name link
+    # click on the parent name link
     within(:xpath, "//tr[contains(.,'#{@parent_name.name}')]") do
       assert_equal "Show all #{@parent_name.name} children fact values", first(:xpath, "//td[2]//li[1]//a[2]")[:title]
       first(:xpath, "//td[2]//a[1]").click
     end
 
-    #click on the child name link
+    # click on the child name link
     within(:xpath, "//tr[contains(.,'#{@child_name.short_name}')]") do
       assert_equal "Show #{@child_name.name} fact values for all hosts", first(:xpath, "//td[1]//a")[:title]
       first(:xpath, "//td[1]//a").click
     end
 
-    assert_equal "Show all #{@parent_name.name} children fact values", first(:xpath, "//td[2]//a")[:'title']
+    assert_equal "Show all #{@parent_name.name} children fact values", first(:xpath, "//td[2]//a")[:title]
   end
 end

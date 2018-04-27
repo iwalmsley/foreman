@@ -1,4 +1,5 @@
 class LookupKey < ApplicationRecord
+  audited :associated_with => :audit_class
   include Authorizable
   include HiddenValue
   include Classification
@@ -10,7 +11,6 @@ class LookupKey < ApplicationRecord
   EQ_DELM  = "="
   VALUE_REGEX =/\A[^#{KEY_DELM}]+#{EQ_DELM}[^#{KEY_DELM}]+(#{KEY_DELM}[^#{KEY_DELM}]+#{EQ_DELM}[^#{KEY_DELM}]+)*\Z/
 
-  audited :associated_with => :audit_class
   validates_lengths_from_database
 
   serialize :default_value
@@ -86,7 +86,7 @@ class LookupKey < ApplicationRecord
   def to_param
     # to_param is used in views to create a link to the lookup_key.
     # If the key has whitespace in it the link will break so this replaced the whitespace.
-    search_key = key.tr(' ','_') unless key.nil?
+    search_key = key.tr(' ', '_') unless key.nil?
     Parameterizable.parameterize("#{id}-#{search_key}")
   end
 
@@ -95,18 +95,18 @@ class LookupKey < ApplicationRecord
   end
 
   def path
-    path = read_attribute(:path)
-    path.blank? ? array2path(Setting["Default_variables_Lookup_Path"]) : path
+    path = self[:path]
+    path.presence || array2path(Setting["Default_variables_Lookup_Path"])
   end
 
   def path=(v)
     return unless v
-    using_default = v.tr("\r","") == array2path(Setting["Default_variables_Lookup_Path"])
-    write_attribute(:path, using_default ? nil : v)
+    using_default = v.tr("\r", "") == array2path(Setting["Default_variables_Lookup_Path"])
+    self[:path] = using_default ? nil : v
   end
 
   def default_value_before_type_cast
-    return read_attribute(:default_value) if errors[:default_value].present?
+    return self[:default_value] if errors[:default_value].present?
     value_before_type_cast default_value
   end
 
@@ -118,7 +118,7 @@ class LookupKey < ApplicationRecord
       when :yaml, :hash
         val = YAML.dump val
         val.sub!(/\A---\s*$\n/, '')
-    end unless key_type.blank?
+    end if key_type.present?
     val
   end
 
@@ -155,7 +155,7 @@ class LookupKey < ApplicationRecord
   private
 
   def sanitize_path
-    self.path = path.tr("\s","").downcase unless path.blank?
+    self.path = path.tr("\s", "").downcase if path.present?
   end
 
   def array2path(array)

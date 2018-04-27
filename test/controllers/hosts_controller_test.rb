@@ -63,7 +63,7 @@ class HostsControllerTest < ActionController::TestCase
     assert_template 'index'
     assert scope_accessed
 
-    #restore the previous state
+    # restore the previous state
     new_scopes = HostsController.scopes_for(:index)
     new_scopes.keep_if { |s| old_scopes.include?(s) }
   end
@@ -211,8 +211,8 @@ class HostsControllerTest < ActionController::TestCase
       put :setBuild, params: { :id => @host.name }, session: set_session_user
       assert_response :found
       assert_redirected_to hosts_path
-      assert_not_nil flash[:notice]
-      assert flash[:notice] == "Enabled #{@host} for rebuild on next boot"
+      assert_not_nil flash[:success]
+      assert flash[:success] == "Enabled #{@host} for rebuild on next boot"
     end
 
     test 'and reboot was requested, the flash should inform it' do
@@ -228,8 +228,8 @@ class HostsControllerTest < ActionController::TestCase
       put :setBuild, params: { :id => @host.name, :host => {:build => '1'} }, session: set_session_user
       assert_response :found
       assert_redirected_to hosts_path
-      assert_not_nil flash[:notice]
-      assert_equal(flash[:notice], "Enabled #{@host} for reboot and rebuild")
+      assert_not_nil flash[:success]
+      assert_equal(flash[:success], "Enabled #{@host} for reboot and rebuild")
     end
 
     test 'and reboot requested and reboot failed, the flash should inform it' do
@@ -245,8 +245,17 @@ class HostsControllerTest < ActionController::TestCase
       @host.power.reset
       assert_response :found
       assert_redirected_to hosts_path
-      assert_not_nil flash[:notice]
-      assert_equal(flash[:notice], "Enabled #{@host} for rebuild on next boot, but failed to power cycle the host")
+      assert_not_nil flash[:success]
+      assert_equal(flash[:success], "Enabled #{@host} for rebuild on next boot, but failed to power cycle the host")
+    end
+
+    test 'should render ajax_error when finding a vm has been faild' do
+      ComputeResource.any_instance.stubs(:find_vm_by_uuid).raises(ActiveRecord::RecordNotFound)
+      host = FactoryBot.create(:host, :with_hostgroup, :with_environment, :on_compute_resource)
+      get :vm, params: { :id => host.id }, session: set_session_user
+      expected_body = "<div class=\"alert alert-danger \"><span class=\"pficon pficon-error-circle-o \"></span> <span class=\"text\"><span>Failure: ActiveRecord::RecordNotFound</span></span></div>\n"
+      assert_equal response.body, expected_body
+      assert_response :internal_server_error
     end
 
     test 'and reboot requested and reboot raised exception, the flash should inform it' do
@@ -257,8 +266,8 @@ class HostsControllerTest < ActionController::TestCase
       end
       assert_response :found
       assert_redirected_to hosts_path
-      assert_not_nil flash[:notice]
-      assert_equal(flash[:notice], "Enabled #{@host} for rebuild on next boot")
+      assert_not_nil flash[:success]
+      assert_equal(flash[:success], "Enabled #{@host} for rebuild on next boot")
     end
   end
 
@@ -456,7 +465,7 @@ class HostsControllerTest < ActionController::TestCase
       assert_equal environments(:global_puppetmaster), @host1.reload.environment
       assert_equal environments(:global_puppetmaster), @host2.reload.environment
     end
-    assert_equal "Updated hosts: changed environment", flash[:notice]
+    assert_equal "Updated hosts: changed environment", flash[:success]
   end
 
   test "should inherit the hostgroup environment if *inherit from hostgroup* selected" do
@@ -723,7 +732,7 @@ class HostsControllerTest < ActionController::TestCase
     one = users(:one)
     one.roles << [roles(:manager)]
     FactName.create :name =>"architecture"
-    get :disabled, params: { :user => one.id }, session: set_session_user
+    get :disabled, session: set_session_user(one)
     assert_response :success
   end
 
@@ -818,11 +827,11 @@ class HostsControllerTest < ActionController::TestCase
       assert Host.find(@host2.id).enabled
     end
 
-    def multiple_hosts_submit_request(method, ids, notice, params = {})
+    def multiple_hosts_submit_request(method, ids, success, params = {})
       post :"submit_multiple_#{method}", params: params.merge({:host_ids => ids}), session: set_session_user
       assert_response :found
       assert_redirected_to hosts_path
-      assert_equal notice, flash[:notice]
+      assert_equal success, flash[:success]
     end
   end
 
@@ -832,7 +841,7 @@ class HostsControllerTest < ActionController::TestCase
     assert_empty @host.errors
     put :toggle_manage, params: { :id => @host.name }, session: set_session_user
     assert_redirected_to :controller => :hosts, :action => :edit
-    assert flash[:notice] == _("Foreman now manages the build cycle for %s") %(@host.name)
+    assert flash[:success] == _("Foreman now manages the build cycle for %s") %@host.name
   end
 
   def test_unset_manage
@@ -841,7 +850,7 @@ class HostsControllerTest < ActionController::TestCase
     assert_empty @host.errors
     put :toggle_manage, params: { :id => @host.name }, session: set_session_user
     assert_redirected_to :controller => :hosts, :action => :edit
-    assert flash[:notice] == _("Foreman now no longer manages the build cycle for %s") %(@host.name)
+    assert flash[:success] == _("Foreman now no longer manages the build cycle for %s") %@host.name
   end
 
   test 'when ":restrict_registered_smart_proxies" is false, HTTP requests should be able to get externalNodes' do
@@ -891,7 +900,7 @@ class HostsControllerTest < ActionController::TestCase
     User.current = nil
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
-    Setting[:trusted_puppetmaster_hosts] = ['else.where']
+    Setting[:trusted_hosts] = ['else.where']
 
     @request.env['HTTPS'] = 'on'
     @request.env['SSL_CLIENT_S_DN'] = 'CN=else.where'
@@ -905,7 +914,7 @@ class HostsControllerTest < ActionController::TestCase
     User.current = nil
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
-    Setting[:trusted_puppetmaster_hosts] = ['foreman.example']
+    Setting[:trusted_hosts] = ['foreman.example']
 
     @request.env['HTTPS'] = 'on'
     @request.env['SSL_CLIENT_S_DN'] = 'CN=foreman.example,OU=PUPPET,O=FOREMAN,ST=North Carolina,C=US'
@@ -919,7 +928,7 @@ class HostsControllerTest < ActionController::TestCase
     User.current = nil
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
-    Setting[:trusted_puppetmaster_hosts] = ['foreman.linux.lab.local']
+    Setting[:trusted_hosts] = ['foreman.linux.lab.local']
 
     @request.env['HTTPS'] = 'on'
     @request.env['SSL_CLIENT_S_DN'] = '/C=US/ST=NC/L=City/O=Example/OU=IT/CN=foreman.linux.lab.local/emailAddress=user@example.com'
@@ -997,7 +1006,7 @@ class HostsControllerTest < ActionController::TestCase
     assert_response :success
   end
 
-  #Pessimistic - Location
+  # Pessimistic - Location
   test "update multiple location fails on pessimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
     location = taxonomies(:location1)
@@ -1029,7 +1038,7 @@ class HostsControllerTest < ActionController::TestCase
     end
   end
 
-  #Optimistic - Location
+  # Optimistic - Location
   test "update multiple location updates location of hosts if succeeds on optimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
     location = taxonomies(:location1)
@@ -1041,7 +1050,7 @@ class HostsControllerTest < ActionController::TestCase
       }, session: set_session_user
     end
     assert_redirected_to :controller => :hosts, :action => :index
-    assert_equal "Updated hosts: Changed Location", flash[:notice]
+    assert_equal "Updated hosts: Changed Location", flash[:success]
   end
   test "update multiple location imports taxable_taxonomies rows if succeeds on optimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
@@ -1058,7 +1067,7 @@ class HostsControllerTest < ActionController::TestCase
     end
   end
 
-  #Pessimistic - organization
+  # Pessimistic - organization
   test "update multiple organization fails on pessimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
     organization = taxonomies(:organization1)
@@ -1090,7 +1099,7 @@ class HostsControllerTest < ActionController::TestCase
     end
   end
 
-  #Optimistic - Organization
+  # Optimistic - Organization
   test "update multiple organization succeeds on optimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
     organization = taxonomies(:organization1)
@@ -1099,7 +1108,7 @@ class HostsControllerTest < ActionController::TestCase
       :host_ids => Host.pluck('hosts.id')
     }, session: set_session_user
     assert_redirected_to :controller => :hosts, :action => :index
-    assert_equal "Updated hosts: Changed Organization", flash[:notice]
+    assert_equal "Updated hosts: Changed Organization", flash[:success]
   end
   test "update multiple organization updates organization of hosts if succeeds on optimistic import" do
     @request.env['HTTP_REFERER'] = hosts_path
@@ -1190,7 +1199,7 @@ class HostsControllerTest < ActionController::TestCase
     host = FactoryBot.create(:host, :organization => taxonomies(:organization1), :location => taxonomies(:location1), :owner => users(:restricted))
     setup_user 'edit', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
     host_ids = [host.id]
-    #the ajax can be any of the multiple actions, toke multiple_parameters for example
+    # the ajax can be any of the multiple actions, toke multiple_parameters for example
     post :multiple_parameters, params: {:host_ids => host_ids}, session: set_session_user(:restricted), xhr: true
     assert_response :success
   end
@@ -1212,7 +1221,7 @@ class HostsControllerTest < ActionController::TestCase
   end
 
   test "select multiple action with not exists host_ids should redirect to hosts page" do
-    post :multiple_parameters, params: {:host_ids => [-1,2]}, session: set_session_user, xhr: true
+    post :multiple_parameters, params: {:host_ids => [-1, 2]}, session: set_session_user, xhr: true
     assert_response :redirect, hosts_path
     assert_not_nil flash[:error]
   end
@@ -1239,7 +1248,7 @@ class HostsControllerTest < ActionController::TestCase
     host = FactoryBot.create(:host, :on_compute_resource)
     post :update_multiple_disassociate, params: { :host_ids => [host.id], :host_names => [host.name] }, session: set_session_user
     assert_response :redirect, hosts_path
-    assert_not_nil flash[:notice]
+    assert_not_nil flash[:success]
     host.reload
     refute host.uuid
     refute host.compute_resource_id
@@ -1261,6 +1270,7 @@ class HostsControllerTest < ActionController::TestCase
 
   test '#review_before_build' do
     HostBuildStatus.any_instance.stubs(:host_status).returns(true)
+    HostBuildStatus.any_instance.stubs(:check_all_statuses).returns(true)
     get :review_before_build, params: {:id => @host.name}, session: set_session_user, xhr: true
     assert_response :success
     assert_template 'review_before_build'
@@ -1331,7 +1341,7 @@ class HostsControllerTest < ActionController::TestCase
 
       assert_response :found
       assert_redirected_to hosts_path
-      assert_not_nil flash[:notice]
+      assert_not_nil flash[:success]
     end
 
     def test_submit_multiple_rebuild_config_pessimistic
@@ -1374,7 +1384,7 @@ class HostsControllerTest < ActionController::TestCase
     test '#process_hostgroup changes compute attributes' do
       group1 = FactoryBot.create(:hostgroup, :compute_profile => compute_profiles(:one))
       host = FactoryBot.build_stubbed(:host, :managed, :on_compute_resource)
-      #remove unneeded expectation to :queue_compute
+      # remove unneeded expectation to :queue_compute
       host.unstub(:queue_compute)
       host.hostgroup = group1
       host.compute_resource = compute_resources(:one)
@@ -1397,7 +1407,7 @@ class HostsControllerTest < ActionController::TestCase
     test '#process_hostgroup does not change compute attributes if compute profile selected manually' do
       group1 = FactoryBot.create(:hostgroup, :compute_profile => compute_profiles(:one))
       host = FactoryBot.build_stubbed(:host, :managed, :on_compute_resource)
-      #remove unneeded expectation to :queue_compute
+      # remove unneeded expectation to :queue_compute
       host.unstub(:queue_compute)
       host.hostgroup = group1
       host.compute_resource = compute_resources(:one)
@@ -1529,7 +1539,7 @@ class HostsControllerTest < ActionController::TestCase
       Host::Managed.any_instance.expects(:ipmi_boot).with('bios').returns(true)
       put :ipmi_boot, params: { :id => @host.id, :ipmi_device => 'bios' },
         session: set_session_user.merge(:user => @one.id)
-      assert_match(/#{@host.name} now boots from BIOS/, flash[:notice])
+      assert_match(/#{@host.name} now boots from BIOS/, flash[:success])
       assert_redirected_to host_path(@host.id)
     end
   end
@@ -1603,6 +1613,31 @@ class HostsControllerTest < ActionController::TestCase
       }, session: set_session_user, xhr: true
       assert_response :success
       assert_template :partial => 'puppetclasses/_class_selection'
+    end
+
+    test 'should not escape lookup values on environment change' do
+      host = FactoryBot.create(:host, :with_environment, :with_puppetclass)
+
+      host.environment.locations = [host.location]
+      host.environment.organizations = [host.organization]
+
+      lookup_key = FactoryBot.create(:puppetclass_lookup_key, :as_smart_class_param, :key_type => 'array',
+                                     :default_value => ['a', 'b'], :override => true, :puppetclass => host.puppetclasses.first)
+      lookup_value = FactoryBot.create(:lookup_value, :lookup_key => lookup_key, :match => "fqdn=#{host.fqdn}", :value => ["c", "d"])
+
+      # sending exactly what the host form would send which is lookup_value.value_before_type_cast
+      lk = {"lookup_values_attributes" => {lookup_key.id.to_s => {"value" => lookup_value.value_before_type_cast, "id" =>lookup_value.id, "lookup_key_id" =>  lookup_key.id, "_destroy" => false}}}
+
+      params = {
+        host_id: host.id,
+        host: host.attributes.merge(lk)
+      }
+
+      # environment change calls puppetclass_parameters which caused the extra escaping
+      post :puppetclass_parameters, params: params, session: set_session_user, xhr: true
+
+      # if this was escaped during refresh_host the value in response.body after unescapeHTML would include "[\\\"c\\\",\\\"d\\\"]"
+      assert_includes CGI.unescapeHTML(response.body), "[\"c\",\"d\"]"
     end
   end
 

@@ -62,7 +62,7 @@ class OrganizationsControllerTest < ActionController::TestCase
 
       assert_difference('Organization.count', -1) do
         delete :destroy, params: { :id => organization }, session: set_session_user
-        assert_match /Successfully deleted/, flash[:notice]
+        assert_match /Successfully deleted/, flash[:success]
       end
     end
   end
@@ -107,7 +107,7 @@ class OrganizationsControllerTest < ActionController::TestCase
       post :assign_all_hosts, params: { :id => organization.id }, session: set_session_user
     end
     assert_redirected_to :controller => :organizations, :action => :index
-    assert_equal flash[:notice], "All hosts previously with no organization are now assigned to Organization 1"
+    assert_equal flash[:success], "All hosts previously with no organization are now assigned to Organization 1"
   end
 
   test "should assign all hosts with no organization to selected organization and add taxable_taxonomies" do
@@ -138,7 +138,7 @@ class OrganizationsControllerTest < ActionController::TestCase
       }, session: set_session_user
     end
     assert_redirected_to :controller => :organizations, :action => :index
-    assert_equal flash[:notice], "Selected hosts are now assigned to Organization 1"
+    assert_equal flash[:success], "Selected hosts are now assigned to Organization 1"
   end
 
   # Mismatches
@@ -153,13 +153,13 @@ class OrganizationsControllerTest < ActionController::TestCase
   test "button Fix All Mismatches should work" do
     post :import_mismatches, session: set_session_user
     assert_redirected_to :controller => :organizations, :action => :index
-    assert_equal flash[:notice], "All mismatches between hosts and locations/organizations have been fixed"
+    assert_equal flash[:success], "All mismatches between hosts and locations/organizations have been fixed"
     # check that there are no mismatches
     get :mismatches, session: set_session_user
     assert_match "No hosts are mismatched", @response.body
   end
 
-  #Clone
+  # Clone
   test "should present clone wizard" do
     organization = taxonomies(:organization1)
     get :clone_taxonomy, params: { :id => organization.id }, session: set_session_user
@@ -174,7 +174,7 @@ class OrganizationsControllerTest < ActionController::TestCase
 
     assert_difference "Organization.unscoped.count", 1 do
       post :create, params: {
-        :organization => organization_dup.selected_ids.each { |_,v| v.uniq! }
+        :organization => organization_dup.selected_ids.each { |_, v| v.uniq! }
           .merge(:name => 'organization_dup_name')
       }, session: set_session_user
     end
@@ -203,7 +203,7 @@ class OrganizationsControllerTest < ActionController::TestCase
     user2 = FactoryBot.create(:user, :with_mail)
     organization = as_admin { FactoryBot.create(:organization, :users => [user1, user2]) }
 
-    User.any_instance.expects(:expire_topbar_cache).times(2+User.only_admin.count) #2 users, all admins
+    User.any_instance.expects(:expire_topbar_cache).times(2+User.only_admin.count) # 2 users, all admins
     put :update, params: { :id => organization.id, :organization => {:name => "Topbar Org" } }, session: set_session_user
   end
 
@@ -225,7 +225,7 @@ class OrganizationsControllerTest < ActionController::TestCase
 
   test 'should allow empty array as param value of array field while updating organization' do
     organization = taxonomies(:organization2)
-    organization.update_attributes(:smart_proxy_ids => [ smart_proxies(:one).id ])
+    organization.update(:smart_proxy_ids => [ smart_proxies(:one).id ])
     saved_organization = Organization.find_by_id(organization.id)
     assert_equal 1, saved_organization.smart_proxy_ids.count
     put :update, params: { :id => organization.id, :organization => {:smart_proxy_ids => [""]} }, session: set_session_user
@@ -236,7 +236,7 @@ class OrganizationsControllerTest < ActionController::TestCase
   context 'wizard' do
     test 'redirects to step 2 if unassigned hosts exist' do
       host = FactoryBot.create(:host)
-      host.update_attributes(:organization => nil)
+      host.update(:organization => nil)
 
       organization = FactoryBot.create(:organization)
       Organization.stubs(:current).returns(organization)
@@ -255,7 +255,7 @@ class OrganizationsControllerTest < ActionController::TestCase
 
     test 'redirects to step 3 if no permissins for hosts' do
       host = FactoryBot.create(:host)
-      host.update_attributes(:organization => nil)
+      host.update(:organization => nil)
 
       Host.stubs(:authorized).returns(Host.where('1=0'))
 

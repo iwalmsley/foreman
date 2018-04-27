@@ -35,7 +35,7 @@ module Facets
       #    host.foo # => will call Host.my_facet.foo
       def register_facet_relation(klass, facet_config)
         klass.class_eval do
-          has_one facet_config.name, :class_name => facet_config.model.name, :foreign_key => :host_id, :inverse_of => :host
+          has_one facet_config.name, :class_name => facet_config.model.name, :foreign_key => :host_id, :inverse_of => :host, :dependent => facet_config.dependent
           accepts_nested_attributes_for facet_config.name, :update_only => true, :reject_if => :all_blank
           if Foreman.in_rake?("db:migrate")
             # To prevent running into issues in old migrations when new facet is defined but not migrated yet.
@@ -61,9 +61,9 @@ module Facets
 
           include_in_clone facet_config.name
 
-          facet_config.compatibility_properties.each do |prop|
+          facet_config.compatibility_properties&.each do |prop|
             define_method(prop) { |*args| forward_property_call(prop, args, facet_config.name) }
-          end if facet_config.compatibility_properties
+          end
         end
       end
     end

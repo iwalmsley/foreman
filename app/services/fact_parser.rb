@@ -52,7 +52,7 @@ class FactParser
 
   def hostgroup
     hostgroup_title = facts[:foreman_hostgroup]
-    Hostgroup.unscoped.where(:title => hostgroup_title).first_or_create unless hostgroup_title.blank?
+    Hostgroup.unscoped.where(:title => hostgroup_title).first_or_create if hostgroup_title.present?
   end
 
   # should return hash with indifferent access in following format:
@@ -94,6 +94,10 @@ class FactParser
 
   def parse_interfaces?
     support_interfaces_parsing? && !Setting['ignore_puppet_facts_for_provisioning']
+  end
+
+  def class_name_humanized
+    @class_name_humanized ||= self.class.name.demodulize.underscore
   end
 
   private

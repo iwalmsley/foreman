@@ -14,27 +14,27 @@ class OperatingsystemTest < ActiveSupport::TestCase
   should validate_numericality_of(:major).is_greater_than_or_equal_to(0)
   should validate_numericality_of(:minor).is_greater_than_or_equal_to(0)
 
-  should allow_value('a' * 255).for(:name)
-  should_not allow_value('a' * 256).for(:name)
+  should allow_value(*valid_name_list).for(:name)
+  should_not allow_value(invalid_name_list).for(:name)
 
   should allow_value('1' * 5).for(:major)
-  should_not allow_value('1' * 6).for(:major)
-  should_not allow_value(-33).for(:major)
+  should_not allow_values('1' * 6, '', -33).for(:major)
 
   should allow_value('1' * 16).for(:minor)
-  should_not allow_value('1' * 17).for(:minor)
-  should_not allow_value(-50).for(:minor)
+  should_not allow_values('1' * 17, -50).for(:minor)
+
+  should allow_values('Base64', 'SHA256', 'SHA512').for(:password_hash)
+  should_not allow_value('INVALID_HASH').for(:password_hash)
 
   should validate_length_of(:description).is_at_most(255)
+  should allow_value(*valid_name_list).for(:description)
 
-  #TODO: this test should be uncommented after validation is implemented
-  # test "name and major should be unique" do
-  #   operating_system = Operatingsystem.new :name => "Ubuntu", :major => "10"
-  #   assert operating_system.save
-
-  #   other_operating_system = Operatingsystem.new :name => "Ubuntu", :major => "10"
-  #   assert !other_operating_system.save
-  # end
+  test "name and major should be unique" do
+    operating_system = FactoryBot.build(:operatingsystem, :name => "Ubuntu", :major => "10")
+    assert operating_system.save
+    other_operating_system = FactoryBot.build(:operatingsystem, :name => "Ubuntu", :major => "10")
+    refute_valid other_operating_system
+  end
 
   test "should not destroy while using" do
     operating_system = Operatingsystem.new :name => "Ubuntu", :major => "10"
@@ -72,7 +72,7 @@ class OperatingsystemTest < ActiveSupport::TestCase
 
   test "should set description by setting to_label" do
     os = operatingsystems(:centos5_3)
-    os.update_attributes(:to_label => "CENTOS 5.3")
+    os.update(:to_label => "CENTOS 5.3")
     assert_equal os.description, os.to_label
   end
 
@@ -120,8 +120,10 @@ class OperatingsystemTest < ActiveSupport::TestCase
     let(:os) { Operatingsystem.new :name => "dummy", :major => 7 }
 
     test "os family can be one of defined os families" do
-      os.family = Operatingsystem.families[0]
-      assert os.valid?
+      Operatingsystem.families.each do |family|
+        os.family = family
+        assert_valid os
+      end
     end
 
     test "os family can't be anything else than defined os families" do
@@ -158,8 +160,8 @@ class OperatingsystemTest < ActiveSupport::TestCase
 
     test "families_as_collection contains correct names and values" do
       families = Operatingsystem.families_as_collection
-      assert_equal ["AIX", "Altlinux", "Arch Linux", "CoreOS", "Debian", "FreeBSD", "Gentoo", "Junos", "NX-OS", "Red Hat", "SUSE", "Solaris", "Windows", "XenServer"], families.map(&:name).sort
-      assert_equal ["AIX", "Altlinux", "Archlinux", "Coreos", "Debian", "Freebsd", "Gentoo", "Junos", "NXOS", "Redhat", "Solaris", "Suse", "Windows", "Xenserver"], families.map(&:value).sort
+      assert_equal ["AIX", "Altlinux", "Arch Linux", "CoreOS", "Debian", "FreeBSD", "Gentoo", "Junos", "NX-OS", 'RancherOS', "Red Hat", "SUSE", "Solaris", "Windows", "XenServer"], families.map(&:name).sort
+      assert_equal ["AIX", "Altlinux", "Archlinux", "Coreos", "Debian", "Freebsd", "Gentoo", "Junos", "NXOS", 'Rancheros', "Redhat", "Solaris", "Suse", "Windows", "Xenserver"], families.map(&:value).sort
     end
   end
 
@@ -279,7 +281,7 @@ class OperatingsystemTest < ActiveSupport::TestCase
       @template_kind = FactoryBot.create(:template_kind)
       @provisioning_template = FactoryBot.create(:provisioning_template, :template_kind_id => @template_kind.id)
       @os = operatingsystems(:centos5_3)
-      @os.update_attributes(:os_default_templates_attributes =>
+      @os.update(:os_default_templates_attributes =>
                                [{ :provisioning_template_id => @provisioning_template.id, :template_kind_id => @template_kind.id }]
       )
     end
@@ -293,7 +295,7 @@ class OperatingsystemTest < ActiveSupport::TestCase
     test 'should remove os default template' do
       # Association deleted, yet template_kind and provisioning_template not.
       assert_difference('@os.os_default_templates.length', -1) do
-        @os.update_attributes(:os_default_templates_attributes => { :id => @os.os_default_templates.last.id, :_destroy => 1 })
+        @os.update(:os_default_templates_attributes => { :id => @os.os_default_templates.last.id, :_destroy => 1 })
       end
       assert_valid @template_kind
       assert_valid @provisioning_template

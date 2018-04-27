@@ -71,11 +71,11 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
       :primary => true,
       :ip => '10.0.0.20',
       :mac => '00:11:22:33:44:00'
-    },{
+    }, {
       :type => 'bmc',
       :provider => 'IPMI',
       :mac => '00:11:22:33:44:01'
-    },{
+    }, {
       :mac => '00:11:22:33:44:02',
       :_destroy => 1
     }]
@@ -123,7 +123,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     hosts = ActiveSupport::JSON.decode(@response.body)
     assert !hosts.empty?
 
-    #restore the previous state
+    # restore the previous state
     new_scopes = Api::V2::HostsController.scopes_for(:index)
     new_scopes.keep_if { |s| old_scopes.include?(s) }
   end
@@ -205,11 +205,13 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   test "should create host with host_parameters_attributes" do
     disable_orchestration
     Foreman::Deprecation.expects(:api_deprecation_warning).with('Field host_parameters_attributes.nested ignored')
+    attrs = [{"name" => "compute_resource_id", "value" => "1", "nested" => "true"}]
     assert_difference('Host.count') do
-      attrs = [{"name" => "compute_resource_id", "value" => "1", "nested" => "true"}]
       post :create, params: { :host => valid_attrs.merge(:host_parameters_attributes => attrs) }
     end
     assert_response :created
+    assert_equal JSON.parse(@response.body)['parameters'][0]['name'], attrs[0]['name'], "Can't create host with valid parameters #{attrs}"
+    assert_equal JSON.parse(@response.body)['parameters'][0]['value'], attrs[0]['value'], "Can't create host with valid parameters #{attrs}"
   end
 
   test "should create host with host_parameters_attributes sent in a hash" do
@@ -313,9 +315,12 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test "should update hostgroup_id of host" do
-    @host = FactoryBot.create(:host, basic_attrs_with_hg)
-    put :update, params: { :id => @host.to_param, :hostgroup_id => Hostgroup.last.id }
+    host = FactoryBot.create(:host, basic_attrs_with_hg)
+    hg = FactoryBot.create(:hostgroup, :with_environment)
+    put :update, params: { :id => host.to_param, :host => { :hostgroup_id => hg.id }}
     assert_response :success
+    host.reload
+    assert_equal host.hostgroup_id, hg.id
   end
 
   test 'does not set compute profile when updating arbitrary field' do
@@ -568,7 +573,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'when ":restrict_registered_smart_proxies" is false, HTTP requests should be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = false
     SETTINGS[:require_ssl] = false
 
@@ -582,9 +587,10 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
 
   test 'hosts with a registered smart proxy on should import facts successfully' do
     proxy = smart_proxies(:puppetmaster)
+    proxy.stubs(:associate_features)
     proxy.update_attribute(:url, 'https://factsimporter.foreman')
 
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = false
 
@@ -598,7 +604,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'hosts without a registered smart proxy on should not be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = false
 
@@ -610,7 +616,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'hosts with a registered smart proxy and SSL cert should import facts successfully' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
 
@@ -624,7 +630,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'hosts without a registered smart proxy but with an SSL cert should not be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
 
@@ -638,7 +644,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'hosts with an unverified SSL cert should not be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
 
@@ -652,7 +658,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'when "require_ssl_smart_proxies" and "require_ssl" are true, HTTP requests should not be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
     SETTINGS[:require_ssl] = true
@@ -665,7 +671,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
   end
 
   test 'when "require_ssl_smart_proxies" is true and "require_ssl" is false, HTTP requests should be able to import facts' do
-    User.current = users(:one) #use an unprivileged user, not apiadmin
+    User.current = users(:one) # use an unprivileged user, not apiadmin
     # since require_ssl_smart_proxies is only applicable to HTTPS connections, both should be set
     Setting[:restrict_registered_smart_proxies] = true
     Setting[:require_ssl_smart_proxies] = true
@@ -780,6 +786,7 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
       get :index, params: { :search => @bmchost.name }
       assert_response :success
       response = ActiveSupport::JSON.decode(@response.body)
+      assert_equal response['search'], @bmchost.name
       assert_equal 10, response['total'] # one from setup, one from bmc setup, 8 here
       assert_equal 1, response['subtotal']
       assert_equal @bmchost.name, response['search']
@@ -972,5 +979,199 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     assert_equal 2, last_record.interfaces.count
     assert_equal '192.168.2.10', last_record.interfaces.find_by_mac('00:11:22:33:44:00').ip
     assert_equal '192.168.3.10', last_record.interfaces.find_by_mac('00:11:22:33:44:01').ip
+  end
+
+  test "should not create host only with user owner type" do
+    assert_difference('Host.count', 0) do
+      post :create, params: { :host => valid_attrs.merge(:owner_type => 'User') }
+    end
+    assert_response :unprocessable_entity, "Can create host only with user owner type and without specifying owner"
+  end
+
+  test "should not create host only with usergroup owner type" do
+    assert_difference('Host.count', 0) do
+      post :create, params: { :host => valid_attrs.merge(:owner_type => 'Usergroup') }
+    end
+    assert_response :unprocessable_entity, "Can create host only with usergroup owner type and without specifying owner"
+  end
+
+  test "should not update with invalid name" do
+    put :update, params: { :id => @host.id, :host => {:name => ''} }
+    assert_response :unprocessable_entity, "Can update host with empty name"
+    assert_not_equal '', @host.name
+  end
+
+  test "should create with valid comment" do
+    comment = RFauxFactory.gen_alpha
+    post :create, params: { :host => valid_attrs.merge(:comment => comment) }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['comment'], comment, "Can't create host with valid comment #{comment}"
+  end
+
+  test "should create with enabled parameter" do
+    post :create, params: { :host => valid_attrs.merge(:enabled => false) }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['enabled'], false, "Can't create host with enabled parameter false"
+  end
+
+  test "should create with managed parameter" do
+    post :create, params: { :host => valid_attrs.merge(:managed => true) }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['managed'], true, "Can't create host with managed parameter true"
+  end
+
+  test "should create with build provision method" do
+    post :create, params: { :host => valid_attrs.merge(:provision_method => 'build') }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['provision_method'], 'build', "Can't create host with build provision method"
+  end
+
+  test "should create with image provision method" do
+    post :create, params: { :host => valid_attrs.merge(:provision_method => 'image') }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['provision_method'], 'image', "Can't create host with image provision method"
+  end
+
+  test "should create with puppet ca proxy" do
+    smart_proxy = FactoryBot.create(:smart_proxy)
+    post :create, params: { :host => valid_attrs.merge(:puppet_ca_proxy_id => smart_proxy.id) }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['puppet_ca_proxy']['name'], smart_proxy['name'], "Can't create host with smart proxy #{smart_proxy}"
+  end
+
+  test "should create with puppet proxy" do
+    post :create, params: { :host => valid_attrs }
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['puppet_proxy']['name'], smart_proxies(:puppetmaster).name, "Can't create host with puppet proxy #{smart_proxies(:puppetmaster)}"
+  end
+
+  test "should get per page" do
+    per_page = rand(1..1000)
+    get :index, params: { :per_page => per_page }
+    assert_equal JSON.parse(@response.body)['per_page'], per_page
+  end
+
+  test "should not update with invalid mac" do
+    mac = RFauxFactory.gen_alpha
+    put :update, params: { :id => @host.id, :host => {:mac => mac} }
+    assert_response :unprocessable_entity, "Can update host with invalid mac #{mac}"
+  end
+
+  test "should update build parameter with false value" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:managed => true, :build => true))
+    put :update, params: { :id => host.id, :host => { :build => false} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['build'], false, "Can't update host with false build parameter"
+  end
+
+  test "should update build parameter with true value" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:managed => true, :build => false))
+    put :update, params: { :id => host.id, :host => { :build => true} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['build'], true, "Can't update host with true build parameter"
+  end
+
+  test "should update host with valid comment" do
+    new_comment = 'another valid comment'
+    host = FactoryBot.create(:host, valid_attrs.merge(:comment => 'this is a valid comment'))
+    put :update, params: { :id => host.id, :host => { :comment => new_comment} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['comment'], new_comment, "Can't update host with valid comment #{new_comment}"
+  end
+
+  test "should update enabled parameter with false value" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:enabled => true))
+    put :update, params: { :id => host.id, :host => { :enabled => false} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['enabled'], false, "Can't update host with false enabled parameter"
+  end
+
+  test "should update enabled parameter with true value" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:enabled => false))
+    put :update, params: { :id => host.id, :host => { :enabled => true} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['enabled'], true, "Can't update host with true enabled parameter"
+  end
+
+  test "should update host with parameters attributes" do
+    attrs = [{:name => "attr_name", :value => "attr_value"}]
+    post :create, params: { :id => @host.id, :host => valid_attrs.merge(:host_parameters_attributes => attrs) }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['parameters'][0]['name'], attrs[0][:name], "Can't update host with valid parameters #{attrs}"
+    assert_equal JSON.parse(@response.body)['parameters'][0]['value'], attrs[0][:value], "Can't update host with valid parameters #{attrs}"
+  end
+
+  test "should update with valid ip" do
+    ip = RFauxFactory.gen_ipaddr
+    put :update, params: { :id => @host.id, :host => { :ip => ip} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['ip'], ip, "Can't update host with valid ip #{ip}"
+  end
+
+  test "should update with valid mac" do
+    mac = RFauxFactory.gen_mac(multicast: false)
+    put :update, params: { :id => @host.id, :host => { :mac => mac} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['mac'], mac, "Can't update host with valid mac #{mac}"
+  end
+
+  test "should update with managed parameter true" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:managed => false))
+    put :update, params: { :id => host.id, :host => { :managed => true} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['managed'], true, "Can't update host with managed parameter true"
+  end
+
+  test "should update with managed parameter true" do
+    host = FactoryBot.create(:host, valid_attrs.merge(:managed => true))
+    put :update, params: { :id => host.id, :host => { :managed => false} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['managed'], false, "Can't update host with managed parameter false"
+  end
+
+  test "should update with valid name" do
+    name = RFauxFactory.gen_alpha.downcase
+    put :update, params: { :id => @host.id, :host => { :name => name} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['name'], name, "Can't update host with valid name #{name}"
+  end
+
+  test "should update with user owner" do
+    user = FactoryBot.create(:user, :locations => [taxonomies(:location1)], :organizations => [taxonomies(:organization1)])
+    put :update, params: { :id => @host.id, :host => { :owner_type => 'User', :owner_id => user.id} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['owner_type'], 'User', "Can't update host with user owner"
+    assert_equal JSON.parse(@response.body)['owner_id'], user.id, "Can't update host with user #{user}"
+  end
+
+  test "should update with usergroup owner" do
+    usergroup = FactoryBot.create(:usergroup)
+    put :update, params: { :id => @host.id, :host => { :owner_type => 'Usergroup', :owner_id => usergroup.id} }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['owner_type'], 'Usergroup', "Can't update host with usergroup owner"
+    assert_equal JSON.parse(@response.body)['owner_id'], usergroup.id, "Can't update host with usergroup #{usergroup}"
+  end
+
+  test "should update with puppet ca proxy" do
+    puppet_ca_proxy = FactoryBot.create(:smart_proxy)
+    put :update, params: { :id => @host.id, :host => valid_attrs.merge(:puppet_ca_proxy_id => puppet_ca_proxy.id) }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['puppet_ca_proxy']['name'], puppet_ca_proxy['name'], "Can't update host with puppet ca proxy #{puppet_ca_proxy}"
+  end
+
+  test "should update with puppet class" do
+    environment = environments(:testing)
+    puppetclass = Puppetclass.find_by_name('git')
+    put :update, params: { :id => @host.id, :host => valid_attrs.merge(:environment_id => environment.id, :puppetclass_ids => [puppetclass.id]) }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['environment_id'], environment.id, "Can't update host with environment #{environment}"
+    assert_equal JSON.parse(@response.body)['puppetclasses'][0]['id'], puppetclass.id, "Can't update host with puppetclass #{puppetclass}"
+  end
+
+  test "should update with puppet proxy" do
+    puppet_proxy = FactoryBot.create(:smart_proxy)
+    put :update, params: { :id => @host.id, :host => valid_attrs.merge(:puppet_proxy_id => puppet_proxy.id) }
+    assert_response :success
+    assert_equal JSON.parse(@response.body)['puppet_proxy']['name'], puppet_proxy['name'], "Can't update host with puppet proxy #{puppet_proxy}"
   end
 end

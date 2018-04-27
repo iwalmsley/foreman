@@ -6,6 +6,7 @@ module Host
     include DestroyFlag
     include InterfaceCloning
     include Hostext::Ownership
+    include Foreman::TelemetryHelper
 
     self.table_name = :hosts
     extend FriendlyId
@@ -87,8 +88,7 @@ module Host
              :subnet, :subnet_id, :subnet_name,
              :subnet6, :subnet6_id, :subnet6_name,
              :domain, :domain_id, :domain_name,
-             :hostname, :fqdn, :fqdn_changed?,
-             :fqdn_was, :shortname,
+             :hostname, :fqdn, :shortname,
              :to => :primary_interface, :allow_nil => true
     delegate :name=, :ip=, :ip6=, :mac=,
              :subnet=, :subnet_id=, :subnet_name=,
@@ -139,7 +139,10 @@ module Host
 
       type = facts.delete(:_type)
       importer = FactImporter.importer_for(type).new(self, facts)
-      importer.import!
+      telemetry_observe_histogram(:importer_facts_import_duration, facts.size, type: type)
+      telemetry_duration_histogram(:importer_facts_import_duration, 1000, type: type) do
+        importer.import!
+      end
 
       save(:validate => false)
 
@@ -154,7 +157,9 @@ module Host
       unless build?
         parser = FactParser.parser_for(type).new(facts)
 
-        populate_fields_from_facts(parser, type, source_proxy)
+        telemetry_duration_histogram(:importer_facts_import_duration, 1000, type: type) do
+          populate_fields_from_facts(parser, type, source_proxy)
+        end
       end
 
       set_taxonomies(facts)
@@ -181,7 +186,7 @@ module Host
     def set_non_empty_values(parser, methods)
       methods.each do |attr|
         value = parser.send(attr)
-        self.send("#{attr}=", value) unless value.blank?
+        self.send("#{attr}=", value) if value.present?
       end
     end
 
@@ -196,19 +201,21 @@ module Host
         self.primary_interface.save!
       end
 
+      changed_count = 0
       parser.interfaces.each do |name, attributes|
         iface = get_interface_scope(name, attributes).try(:first) || interface_class(name).new(:managed => false)
         # create or update existing interface
-        set_interface(attributes, name, iface)
+        changed_count += 1 if set_interface(attributes, name, iface)
       end
 
       ipmi = parser.ipmi_interface
       if ipmi.present?
-        existing = self.interfaces.where(:mac => ipmi[:macaddress], :type => Nic::BMC.name).first
+        existing = self.interfaces.find_by(:mac => ipmi[:macaddress], :type => Nic::BMC.name)
         iface = existing || Nic::BMC.new(:managed => false)
         iface.provider ||= 'IPMI'
-        set_interface(ipmi, 'ipmi', iface)
+        changed_count += 1 if set_interface(ipmi, 'ipmi', iface)
       end
+      telemetry_increment_counter(:importer_facts_count_interfaces, changed_count, type: parser.class_name_humanized)
 
       self.interfaces.reload
     end
@@ -410,7 +417,7 @@ module Host
           elsif mac_based.physical.any?
             mac_based.physical
           elsif !self.managed
-            #Unmanaged host's interfaces are just used for reporting, so overwrite based on identifier first
+            # Unmanaged host's interfaces are just used for reporting, so overwrite based on identifier first
             base.where(:identifier => name)
           end
       end
@@ -425,7 +432,7 @@ module Host
     end
 
     def update_bond(bond, iface, name)
-      if iface && iface.identifier
+      if iface&.identifier
         bond.remove_device(iface.identifier)
         bond.add_device(name)
         logger.debug "Updating bond #{bond.identifier}, id #{bond.id}: removing #{iface.identifier}, adding #{name} to attached interfaces"

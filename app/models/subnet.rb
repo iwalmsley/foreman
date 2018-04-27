@@ -1,6 +1,7 @@
 require 'ipaddr'
 
 class Subnet < ApplicationRecord
+  audited
   IP_FIELDS = [:network, :mask, :gateway, :dns_primary, :dns_secondary, :from, :to]
   REQUIRED_IP_FIELDS = [:network, :mask]
   SUBNET_TYPES = {:'Subnet::Ipv4' => N_('IPv4'), :'Subnet::Ipv6' => N_('IPv6')}
@@ -16,7 +17,7 @@ class Subnet < ApplicationRecord
   include BelongsToProxies
 
   attr_exportable :name, :network, :mask, :gateway, :dns_primary, :dns_secondary, :from, :to, :boot_mode,
-    :ipam, :vlanid, :network_type, :description
+    :ipam, :vlanid, :mtu, :network_type, :description
 
   # This sets the rails model name of all child classes to the
   # model name of the parent class, i.e. Subnet.
@@ -32,8 +33,6 @@ class Subnet < ApplicationRecord
     end
     super
   end
-
-  audited
 
   validates_lengths_from_database :except => [:gateway]
   before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups, :interfaces, :domains)
@@ -57,6 +56,12 @@ class Subnet < ApplicationRecord
     :api_description => N_('DNS Proxy ID to use within this subnet'),
     :description => N_('DNS Proxy to use within this subnet for managing PTR records, note that A and AAAA records are managed via Domain DNS proxy')
 
+  belongs_to_proxy :template,
+    :feature => N_('Templates'),
+    :label => N_('Template Proxy'),
+    :api_description => N_('Template HTTP(S) Proxy ID to use within this subnet'),
+    :description => N_('Template HTTP(S) Proxy to use within this subnet to allow access templating endpoint from isolated networks')
+
   has_many :hostgroups
   has_many :subnet_domains, :dependent => :destroy, :inverse_of => :subnet
   has_many :domains, :through => :subnet_domains
@@ -70,6 +75,7 @@ class Subnet < ApplicationRecord
   validates :type, :inclusion => {:in => Proc.new { Subnet::SUBNET_TYPES.keys.map(&:to_s) }, :message => N_("must be one of [ %s ]" % Subnet::SUBNET_TYPES.keys.map(&:to_s).join(', ')) }
   validates :name, :length => {:maximum => 255}, :uniqueness => true
   validates :vlanid, numericality: { :only_integer => true, :greater_than_or_equal_to => 0, :less_than => 4096}, :allow_blank => true
+  validates :mtu, :presence => true
 
   before_validation :normalize_addresses
   validate :ensure_ip_addrs_valid
@@ -84,7 +90,7 @@ class Subnet < ApplicationRecord
   }
 
   scoped_search :on => [:name, :network, :mask, :gateway, :dns_primary, :dns_secondary,
-                        :vlanid, :ipam, :boot_mode, :type], :complete_value => true
+                        :vlanid, :mtu, :ipam, :boot_mode, :type], :complete_value => true
 
   scoped_search :relation => :domains, :on => :name, :rename => :domain, :complete_value => true
   scoped_search :relation => :subnet_parameters, :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
@@ -93,7 +99,7 @@ class Subnet < ApplicationRecord
 
   class Jail < ::Safemode::Jail
     allow :name, :network, :mask, :cidr, :title, :to_label, :gateway, :dns_primary, :dns_secondary,
-          :vlanid, :boot_mode, :dhcp?, :nil?, :has_vlanid?, :dhcp_boot_mode?, :description
+          :vlanid, :mtu, :boot_mode, :dhcp?, :nil?, :has_vlanid?, :dhcp_boot_mode?, :description
   end
 
   # Subnets are displayed in the form of their network network/network mask
@@ -151,7 +157,7 @@ class Subnet < ApplicationRecord
   end
 
   def tftp?
-    !!(tftp && tftp.url && !tftp.url.blank?)
+    !!(tftp && tftp.url && tftp.url.present?)
   end
 
   def tftp_proxy(attrs = {})
@@ -160,11 +166,19 @@ class Subnet < ApplicationRecord
 
   # do we support DNS PTR records for this subnet
   def dns?
-    !!(dns && dns.url && !dns.url.blank?)
+    !!(dns && dns.url && dns.url.present?)
   end
 
   def dns_proxy(attrs = {})
     @dns_proxy ||= ProxyAPI::DNS.new({:url => dns.url}.merge(attrs)) if dns?
+  end
+
+  def template?
+    !!(template && template.url)
+  end
+
+  def template_proxy(attrs = {})
+    @template_proxy ||= ProxyAPI::Template.new({:url => template.url}.merge(attrs)) if template?
   end
 
   def ipam?

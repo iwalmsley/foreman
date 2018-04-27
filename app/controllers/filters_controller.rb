@@ -30,7 +30,7 @@ class FiltersController < ApplicationController
 
   def update
     @filter = resource_base.find(params[:id])
-    if @filter.update_attributes(filter_params)
+    if @filter.update(filter_params)
       process_success :success_redirect => saved_redirect_url_or(filters_path(:role_id => @role))
     else
       process_error
@@ -84,12 +84,12 @@ class FiltersController < ApplicationController
     params[:search] ||= ""
     params.keys.each do |param|
       if param =~ /role_id$/
-        unless (role = Role.find_by_id(params[param])).blank?
+        if (role = Role.find_by_id(params[param])).present?
           query = "role_id = #{role.id}"
           params[:search] += query unless params[:search].include? query
         end
       elsif param =~ /(\w+)_id$/
-        unless params[param].blank?
+        if params[param].present?
           query = "#{Regexp.last_match(1)} = #{params[param]}"
           params[:search] += query unless params[:search].include? query
         end

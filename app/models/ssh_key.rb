@@ -1,4 +1,5 @@
 class SshKey < ApplicationRecord
+  audited :associated_with => :user
   include Authorizable
   extend FriendlyId
   friendly_id :name
@@ -7,8 +8,6 @@ class SshKey < ApplicationRecord
   belongs_to :user
   before_validation :generate_fingerprint
   before_validation :calculate_length
-
-  audited :associated_with => :user
 
   scoped_search :on => :name
   scoped_search :on => :user_id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
@@ -62,6 +61,10 @@ class SshKey < ApplicationRecord
 
   def comment
     "#{user_login}@#{URI.parse(Setting[:foreman_url]).host}"
+  end
+
+  def self.title_name
+    'login'.freeze
   end
 
   private

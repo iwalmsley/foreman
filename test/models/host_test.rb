@@ -1,6 +1,28 @@
 require 'test_helper'
 
+# List of valid comment values.
+def valid_comment_values
+  [
+    RFauxFactory.gen_alpha(1),
+    RFauxFactory.gen_alpha(255),
+    *RFauxFactory.gen_strings(1..255, exclude: [:html, :utf8]).values,
+    RFauxFactory.gen_html(rand((1..230)))
+  ]
+end
+
+# List of valid host names values.
+def valid_hosts_list(domain_length: 10)
+  [
+    RFauxFactory.gen_alphanumeric(rand(1..255-6-domain_length)).downcase,
+    RFauxFactory.gen_alpha(rand(1..255-6-domain_length)).downcase,
+    RFauxFactory.gen_numeric_string(rand(1..255-6-domain_length))
+  ]
+end
+
 class HostTest < ActiveSupport::TestCase
+  include FactImporterIsolation
+  allow_transactions_for_any_importer
+
   setup do
     disable_orchestration
     User.current = users :admin
@@ -113,7 +135,7 @@ class HostTest < ActiveSupport::TestCase
   test "doesn't set compute attributes on update" do
     host = FactoryBot.create(:host)
     Host.any_instance.expects(:set_compute_attributes).never
-    host.update_attributes!(:mac => "52:54:00:dd:ee:ff")
+    host.update!(:mac => "52:54:00:dd:ee:ff")
   end
 
   test "can fetch vm compute attributes" do
@@ -132,6 +154,49 @@ class HostTest < ActiveSupport::TestCase
     setup_user('view', 'hosts', 'name ~ *')
 
     assert_includes Host.authorized('view_hosts'), h
+  end
+
+  test 'should not update with multiple invalid names' do
+    host = FactoryBot.create(:host)
+    invalid_name_list.each do |name|
+      host.name = name
+      refute host.valid?, "Can update host with invalid name #{name}"
+      assert_includes host.errors.keys, :name
+    end
+  end
+
+  test 'should not update with multiple invalid macs' do
+    host = FactoryBot.create(:host)
+    RFauxFactory.gen_strings(256).values.each do |mac|
+      host.interfaces.first.mac = mac
+      refute host.valid?, "Can update host with invalid mac #{mac}"
+      assert_includes host.errors.keys, :'interfaces.mac'
+    end
+  end
+
+  test 'should create with multiple valid comments' do
+    valid_comment_values.each do |comment|
+      host = FactoryBot.build(:host, :comment => comment)
+      assert host.valid?, "Can't create host with valid comment #{comment}"
+    end
+  end
+
+  test 'should create with multiple valid names' do
+    domain = domains(:mydomain)
+    valid_hosts_list(domain_length: domain.name.length).each do |name|
+      host = Host.create! :name => name, :domain => domain
+      assert host.valid?, "Can't create host with valid name #{name} and domain #{domain}"
+      assert_equal "#{name}.#{domain}", host.name, "Host created with name #{name} and domain #{domain.name} does not contains expected name #{name}.#{domain.name}"
+    end
+  end
+
+  test 'should update with multiple valid comments' do
+    host = FactoryBot.create(:host, :comment => RFauxFactory.gen_alpha)
+    valid_comment_values.each do |new_comment|
+      host.comment =  new_comment
+      assert host.valid?, "Can't update host with valid comment #{new_comment}"
+      assert_equal host.comment, new_comment
+    end
   end
 
   context "when unattended is false" do
@@ -239,7 +304,7 @@ class HostTest < ActiveSupport::TestCase
     host = FactoryBot.create(:host)
     lookup_key = lookup_keys(:three)
     assert_difference('LookupValue.count') do
-      assert host.update_attributes!(:lookup_values_attributes => {:new_123456 =>
+      assert host.update!(:lookup_values_attributes => {:new_123456 =>
                                                                    {:lookup_key_id => lookup_key.id, :value => true, :match => "fqdn=#{host.fqdn}",
                                                                     :_destroy => 'false'}})
     end
@@ -252,7 +317,7 @@ class HostTest < ActiveSupport::TestCase
                                       :match => "fqdn=#{host.fqdn}", :value => '8080')
     host.reload
     assert_difference('LookupValue.count', -1) do
-      assert host.update_attributes!(:lookup_values_attributes => {'0' =>
+      assert host.update!(:lookup_values_attributes => {'0' =>
                                                                    {:lookup_key_id => lookup_key.id, :value => '8080', :match => "fqdn=#{host.fqdn}",
                                                                     :id => lookup_value.id, :_destroy => 'true'}})
     end
@@ -265,7 +330,7 @@ class HostTest < ActiveSupport::TestCase
                                       :match => "fqdn=#{host.fqdn}", :value => '8080')
     host.reload
     assert_difference('LookupValue.count', 0) do
-      assert host.update_attributes!(:lookup_values_attributes => {'0' =>
+      assert host.update!(:lookup_values_attributes => {'0' =>
                                                                    {:lookup_key_id => lookup_key.id, :value => '80', :match => "fqdn=#{host.fqdn}",
                                                                     :id => lookup_value.id, :_destroy => 'false'}})
     end
@@ -280,7 +345,7 @@ class HostTest < ActiveSupport::TestCase
                                       :match => host.lookup_value_matcher, :value => YAML.dump(:foo => :bar))
     host.reload
     assert_difference('LookupValue.count', 0) do
-      assert host.update_attributes!(:lookup_values_attributes => {'0' =>
+      assert host.update!(:lookup_values_attributes => {'0' =>
                                                                    {:lookup_key_id => lookup_key.id.to_s, :value => YAML.dump(:updated => :value),
                                                                     :match => host.lookup_value_matcher,
                                                                     :id => lookup_value.id.to_s, :_destroy => 'false'}})
@@ -342,7 +407,7 @@ class HostTest < ActiveSupport::TestCase
         :virtual => false
       }
     }.with_indifferent_access
-    parser = stub(:interfaces => interfaces, :ipmi_interface => {}, :suggested_primary_interface => interfaces.to_a.last)
+    parser = stub(:class_name_humanized => 'TestParser', :interfaces => interfaces, :ipmi_interface => {}, :suggested_primary_interface => interfaces.to_a.last)
 
     host.set_interfaces(parser)
 
@@ -678,45 +743,42 @@ class HostTest < ActiveSupport::TestCase
     refute_equal original_status, new_status
   end
 
-  test "assign a host to a location" do
-    host = Host.create :name => "host 1", :mac => "aabbecddeeff", :ip => "5.5.5.5", :hostgroup => hostgroups(:common), :managed => false
-    location = Location.create :name => "New York"
+  context 'host assigned to location and organization' do
+    setup do
+      @host = FactoryBot.create(:host, :managed => false)
+      @location = Location.create :name => "New York"
+      @organization = Organization.create :name => "Hosting client 1"
+    end
 
-    host.location_id = location.id
-    assert host.save!
-  end
+    test "assign a host to a location" do
+      @host.location_id = @location.id
+      assert @host.save!
+    end
 
-  test "update a host's location" do
-    host = Host.create :name => "host 1", :mac => "aabbccddeeff", :ip => "5.5.5.5", :hostgroup => hostgroups(:common), :managed => false
-    original_location = Location.create :name => "New York"
+    test "update a host's location" do
+      original_location = @location
 
-    host.location_id = original_location.id
-    assert host.save!
-    assert host.location_id = original_location.id
+      @host.location_id = original_location.id
+      assert @host.save!
+      assert_equal @host.location_id, original_location.id
 
-    new_location = Location.create :name => "Los Angeles"
-    host.location_id = new_location.id
-    assert host.save!
-    assert host.location_id = new_location.id
-  end
+      new_location = Location.create :name => "Los Angeles"
+      @host.location_id = new_location.id
+      assert @host.save!
+      assert_equal @host.location_id, new_location.id
+    end
 
-  test "assign a host to an organization" do
-    host = Host.create :name => "host 1", :mac => "aabbecddeeff", :ip => "5.5.5.5", :hostgroup => hostgroups(:common), :managed => false
-    organization = Organization.create :name => "Hosting client 1"
+    test "assign a host to an organization" do
+      @host.organization_id = @organization.id
+      assert @host.save!
+    end
 
-    host.organization_id = organization.id
-    assert host.save!
-  end
+    test "assign a host to both a location and an organization" do
+      @host.location_id = @location.id
+      @host.organization_id = @organization.id
 
-  test "assign a host to both a location and an organization" do
-    host = Host.create :name => "host 1", :mac => "aabbccddeeff", :ip => "5.5.5.5", :hostgroup => hostgroups(:common), :managed => false
-    location = Location.create :name => "Tel Aviv"
-    organization = Organization.create :name => "Hosting client 1"
-
-    host.location_id = location.id
-    host.organization_id = organization.id
-
-    assert host.save!
+      assert @host.save!
+    end
   end
 
   test 'host can be searched in multiple taxonomies' do
@@ -1060,7 +1122,7 @@ class HostTest < ActiveSupport::TestCase
 
     test "models are updated when host.model has no value" do
       h = FactoryBot.create(:host)
-      FactoryBot.create(:fact_value, :value => 'superbox',:host => h,
+      FactoryBot.create(:fact_value, :value => 'superbox', :host => h,
                          :fact_name => FactoryBot.create(:fact_name, :name => 'kernelversion'))
       assert_difference('Model.count') do
         facts = read_json_fixture('facts/facts.json')
@@ -1242,7 +1304,7 @@ class HostTest < ActiveSupport::TestCase
       host.name = "whatever"
       assert host.save!
       assert_equal 'eHlieGE2SlVrejYzdw==', host.root_pass
-      #then let's check that we can change root pass
+      # then let's check that we can change root pass
       host.root_pass = "oh my pass"
       assert host.save!
       refute_equal host.root_pass, 'eHlieGE2SlVrejYzdw=='
@@ -1373,7 +1435,7 @@ class HostTest < ActiveSupport::TestCase
 
     test "#set_interfaces handles no interfaces" do
       host = FactoryBot.create(:host, :hostgroup => FactoryBot.create(:hostgroup))
-      parser = stub(:ipmi_interface => {}, :interfaces => {}, :suggested_primary_interface => [ nil, nil ])
+      parser = stub(:class_name_humanized => 'TestParser', :ipmi_interface => {}, :interfaces => {}, :suggested_primary_interface => [nil, nil])
       host.set_interfaces(parser)
       assert host.primary_interface
       assert_empty host.primary_interface.mac
@@ -1424,7 +1486,7 @@ class HostTest < ActiveSupport::TestCase
     test "#set_interfaces updates existing physical interface by identifier" do
       host, parser = setup_host_with_nic_parser({:macaddress => '00:00:00:22:33:44', :identifier => 'eth0', :virtual => false, :ipaddress => '10.0.0.200', :ipaddress6 => '2001:db8::2', :link => false})
       host.managed = false
-      host.primary_interface.update_attributes(:identifier => 'eth0', :mac => '00:00:00:11:22:33', :ip => '10.10.0.1', :ip6 => '2001:db8::1', :link => true)
+      host.primary_interface.update(:identifier => 'eth0', :mac => '00:00:00:11:22:33', :ip => '10.10.0.1', :ip6 => '2001:db8::1', :link => true)
       assert_no_difference 'Nic::Base.count' do
         host.set_interfaces(parser)
       end
@@ -1537,7 +1599,7 @@ class HostTest < ActiveSupport::TestCase
       hash = { :bond0 => {:macaddress => '00:00:00:44:55:66', :ipaddress => '10.10.0.2', :virtual => true},
                :eth5 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false, :identifier => 'eth5'}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
       bond0 = FactoryBot.create(:nic_bond, :host => host, :mac => '00:00:00:44:55:66', :ip => '10.10.0.2', :identifier => 'bond0', :attached_to => '')
 
       host.set_interfaces(parser)
@@ -1564,7 +1626,7 @@ class HostTest < ActiveSupport::TestCase
       hash = { :bond0 => {:macaddress => 'aa:bb:cc:44:55:66', :ipaddress => '10.10.0.3', :virtual => true},
                :eth5 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false, :identifier => 'eth5'}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
       bond0 = FactoryBot.create(:nic_bond, :host => host, :mac => '00:00:00:44:55:66', :ip => '10.10.0.2', :identifier => 'bond0')
 
       host.set_interfaces(parser)
@@ -1581,7 +1643,7 @@ class HostTest < ActiveSupport::TestCase
       hash = { :br0 => {:macaddress => 'aa:bb:cc:44:55:66', :ipaddress => '10.10.0.3', :virtual => true},
                :eth5 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false, :identifier => 'eth5'}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
       br0 = FactoryBot.create(:nic_bridge, :host => host, :mac => '00:00:00:44:55:66', :ip => '10.10.0.2', :identifier => 'br0')
 
       host.set_interfaces(parser)
@@ -1598,7 +1660,7 @@ class HostTest < ActiveSupport::TestCase
       hash = { :eth5 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false},
                :eth4 => {:macaddress => '00:00:00:44:55:66', :ipaddress => '10.10.0.2', :virtual => false}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
       physical4 = FactoryBot.create(:nic_managed, :host => host, :mac => '00:00:00:11:22:33', :ip => '10.10.0.1', :identifier => 'eth4')
       physical5 = FactoryBot.create(:nic_managed, :host => host, :mac => '00:00:00:44:55:66', :ip => '10.10.0.2', :identifier => 'eth5')
       virtual4 = FactoryBot.create(:nic_managed, :host => host, :mac => '00:00:00:11:22:33', :virtual => true, :ip => '10.10.0.10', :identifier => 'eth4.1', :attached_to => 'eth4')
@@ -1624,7 +1686,7 @@ class HostTest < ActiveSupport::TestCase
       hash = { :em1 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false},
                :bond0 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.42', :virtual => true, :attached_to => nil}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
 
       host.set_interfaces(parser)
       virtual.reload
@@ -1638,7 +1700,7 @@ class HostTest < ActiveSupport::TestCase
                :eth1 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false },
                :eth2 => {:macaddress => '00:00:00:44:55:66', :ipaddress => '10.10.0.2', :virtual => false }
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
 
       host.set_interfaces(parser)
       host.reload
@@ -1663,7 +1725,7 @@ class HostTest < ActiveSupport::TestCase
                                  )
         hash = { :eth0 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.20.2', :virtual => false}
         }.with_indifferent_access
-        parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
+        parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
 
         assert_no_difference 'Nic::Base.count' do
           host.set_interfaces(parser)
@@ -1683,7 +1745,7 @@ class HostTest < ActiveSupport::TestCase
                                  )
         hash = { :eth0 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.20.2', :virtual => false}
         }.with_indifferent_access
-        parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
+        parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
 
         assert_no_difference 'Nic::Base.count' do
           host.set_interfaces(parser)
@@ -1705,7 +1767,7 @@ class HostTest < ActiveSupport::TestCase
                                  )
         hash = { :eth0 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => false}
         }.with_indifferent_access
-        parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
+        parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.last)
 
         assert_no_difference 'Nic::Base.count' do
           host.set_interfaces(parser)
@@ -1723,7 +1785,7 @@ class HostTest < ActiveSupport::TestCase
         :eth1 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '', :virtual => false},
         :bond0 => {:macaddress => '00:00:00:11:22:33', :ipaddress => '10.10.0.1', :virtual => true}
       }.with_indifferent_access
-      parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+      parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
 
       host.set_interfaces(parser)
       host.reload
@@ -1821,7 +1883,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "can search hosts by hostgroup" do
-      #setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
+      # setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
       hostgroup = hostgroups(:db)
       parent_hostgroup = hostgroups(:common)
       hostgroup.parent_id = parent_hostgroup.id
@@ -1835,7 +1897,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "can search hosts by parent hostgroup and its descendants" do
-      #setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
+      # setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
       hostgroup = hostgroups(:db)
       parent_hostgroup = hostgroups(:common)
       hostgroup.parent_id = parent_hostgroup.id
@@ -1849,9 +1911,16 @@ class HostTest < ActiveSupport::TestCase
       assert_equal ["Common", "Common/db"].sort, hosts.map { |h| h.hostgroup.title }.sort
     end
 
+    test "search hosts by non-existing parent hostgroup returns no results" do
+      FactoryBot.create(:host, :with_hostgroup)
+      refute_equal Host::Managed.count, 0
+      hosts = Host::Managed.search_for("parent_hostgroup = Nosuchgroup")
+      assert_equal hosts.count, 0
+    end
+
     test "can search hosts by numeric and string facts" do
       host = FactoryBot.create(:host, :hostname => 'num001.example.com')
-      host.import_facts({:architecture => "x86_64", :interfaces => 'eth0', :operatingsystem => 'RedHat-test', :operatingsystemrelease => '6.2',:memory_mb => "64498",:custom_fact => "find_me"})
+      host.import_facts({:architecture => "x86_64", :interfaces => 'eth0', :operatingsystem => 'RedHat-test', :operatingsystemrelease => '6.2', :memory_mb => "64498", :custom_fact => "find_me"})
 
       hosts = Host::Managed.search_for("facts.memory_mb > 112889")
       assert_equal hosts.count, 0
@@ -1893,6 +1962,11 @@ class HostTest < ActiveSupport::TestCase
       assert_equal [host], Host::Managed.search_for(query)
     end
 
+    test "host edit permision must be always edit_hosts" do
+      h = FactoryBot.build(:host, :managed)
+      assert_equal "edit_hosts", h.send(:permission_name, :edit)
+    end
+
     test "non-admin user with edit_hosts permission can update interface" do
       @one = users(:one)
       # add permission for user :one
@@ -1911,7 +1985,7 @@ class HostTest < ActiveSupport::TestCase
         :provider => "IPMI", :username => "root", :password => "secret", :ip => "10.35.19.35",
         :identifier => 'eth2'
       as_user :one do
-        assert h.update_attributes!("interfaces_attributes" => {"0" => {"mac"=>"00:52:10:1e:45:16"}})
+        assert h.update!("interfaces_attributes" => {"0" => {"mac"=>"00:52:10:1e:45:16"}})
       end
     end
 
@@ -1965,7 +2039,7 @@ class HostTest < ActiveSupport::TestCase
       h = FactoryBot.create(:host)
       as_admin do
         assert_difference "LookupValue.count" do
-          assert h.update_attributes(:lookup_values_attributes => {"0" => {:lookup_key_id => lookup_keys(:one).id, :value => "8080" }})
+          assert h.update(:lookup_values_attributes => {"0" => {:lookup_key_id => lookup_keys(:one).id, :value => "8080" }})
         end
       end
     end
@@ -2055,7 +2129,7 @@ class HostTest < ActiveSupport::TestCase
       results = Host.search_for("smart_proxy = #{proxy.name}")
       assert_equal 1, results.count
       assert results.include?(host)
-      #the results should not change even if the host has multiple connections to same proxy
+      # the results should not change even if the host has multiple connections to same proxy
       host.update_attribute(:puppet_ca_proxy_id, proxy.id)
       results2 = Host.search_for("smart_proxy = #{proxy.name}")
       assert_equal results, results2
@@ -2130,7 +2204,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "CRs without IP attribute don't require an IP" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the CR
+      Setting[:token_duration] = 30 # enable tokens so that we only test the CR
       host = FactoryBot.build_stubbed(:host, :managed,
                           :compute_resource => compute_resources(:one),
                           :compute_attributes => {:fake => "data"})
@@ -2139,7 +2213,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "CRs with IP attribute and a DNS-enabled domain do not require an IP" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the CR
+      Setting[:token_duration] = 30 # enable tokens so that we only test the CR
       host = FactoryBot.build_stubbed(:host, :managed, :domain => domains(:mydomain),
                           :compute_resource => compute_resources(:openstack),
                           :compute_attributes => {:fake => "data"})
@@ -2148,35 +2222,35 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "hosts with a IPv4 DNS-enabled Domain do require an IPv4 address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the domain
+      Setting[:token_duration] = 30 # enable tokens so that we only test the domain
       host = FactoryBot.build(:host, :managed, :domain => domains(:mydomain))
       assert host.require_ip4_validation?
       refute host.require_ip6_validation?
     end
 
     test "hosts with a DNS-enabled Domain without IPv4 do require an IPv6 address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the domain
+      Setting[:token_duration] = 30 # enable tokens so that we only test the domain
       host = FactoryBot.build_stubbed(:host, :managed, :with_ipv6, :domain => domains(:mydomain))
       refute host.require_ip4_validation?
       assert host.require_ip6_validation?
     end
 
     test "hosts without a DNS-enabled Domain don't require an IP" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the domain
+      Setting[:token_duration] = 30 # enable tokens so that we only test the domain
       host = FactoryBot.build_stubbed(:host, :managed, :domain => domains(:useless))
       refute host.require_ip4_validation?
       refute host.require_ip6_validation?
     end
 
     test "hosts with a DNS-enabled Subnet do require an IPv4 address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       host = FactoryBot.build_stubbed(:host, :managed, :subnet => FactoryBot.build_stubbed(:subnet_ipv4, :dns))
       assert host.require_ip4_validation?
       refute host.require_ip6_validation?
     end
 
     test "hosts with a DNS-enabled Domain on CR providing a IPv4 address do not require any kind of address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       proxy = FactoryBot.create(:smart_proxy,
                                  :features => [FactoryBot.create(:feature, :dns)])
       domain = FactoryBot.create(:domain,
@@ -2193,21 +2267,21 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "hosts with a DHCP-enabled Subnet do require an IP" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       host = FactoryBot.build_stubbed(:host, :managed, :subnet => FactoryBot.build_stubbed(:subnet_ipv4, :dhcp))
       assert host.require_ip4_validation?
       refute host.require_ip6_validation?
     end
 
     test "hosts without a DNS/DHCP-enabled Subnet don't require an IP" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       host = FactoryBot.build_stubbed(:host, :managed, :subnet => FactoryBot.build_stubbed(:subnet_ipv4, :dhcp => nil, :dns => nil))
       refute host.require_ip4_validation?
       refute host.require_ip6_validation?
     end
 
     test "hosts with a DNS-enabled IPv6 Subnet require an IPv6 but don't require an IPv4 address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       host = FactoryBot.build_stubbed(:host, :managed,
                                :subnet => FactoryBot.build_stubbed(:subnet_ipv4, :dhcp => nil, :dns => nil),
                                :subnet6 => FactoryBot.build_stubbed(:subnet_ipv6, :dns))
@@ -2216,7 +2290,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "hosts with a DNS-enabled IPv6 Subnet, the mac provided by a CR and a mac based IPAM require neither a IPv6 nor a IPv4 address" do
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       subnet6 = FactoryBot.build_stubbed(:subnet_ipv6, :dns, :ipam => IPAM::MODES[:eui64])
       host = FactoryBot.build_stubbed(:host,
                                :on_compute_resource,
@@ -2301,7 +2375,7 @@ class HostTest < ActiveSupport::TestCase
           host
         end
       end
-      Setting[:token_duration] = 30 #enable tokens so that we only test the subnet
+      Setting[:token_duration] = 30 # enable tokens so that we only test the subnet
       test_host    = Host::Test.create(:name => 'testhost', :interfaces => [FactoryBot.build(:nic_primary_and_provision)])
       managed_host = test_host.to_managed!
       assert_empty Token.where(:host_id => managed_host.id)
@@ -2314,6 +2388,7 @@ class HostTest < ActiveSupport::TestCase
         :compute_resource => compute_resources(:ec2),
         :organization => nil,
         :location => nil)
+      host.stubs(:vm_exists?).returns(true)
       host.expects(:queue_compute_create)
       assert host.valid?, host.errors.full_messages.to_sentence
       assert_equal compute_attributes(:one).vm_attrs, host.compute_attributes
@@ -2325,6 +2400,7 @@ class HostTest < ActiveSupport::TestCase
         :compute_profile => compute_profiles(:two),
         :organization => nil,
         :location => nil)
+      host.stubs(:vm_exists?).returns(true)
       host.expects(:queue_compute_create)
       assert host.valid?, host.errors.full_messages.to_sentence
       assert_equal compute_attributes(:three).vm_attrs, host.compute_attributes
@@ -2733,7 +2809,7 @@ class HostTest < ActiveSupport::TestCase
     host = FactoryBot.create(:host, :with_facts, :managed)
     assert host.fact_values.present?
     refute host.build?
-    host.update_attributes(:build => true)
+    host.update(:build => true)
     assert_empty host.fact_values.reload
   end
 
@@ -2741,7 +2817,7 @@ class HostTest < ActiveSupport::TestCase
     host = FactoryBot.create(:host, :with_reports, :managed)
     assert host.reports.present?
     refute host.build?
-    host.update_attributes(:build => true)
+    host.update(:build => true)
     assert_empty host.reports.reload
   end
 
@@ -2749,7 +2825,7 @@ class HostTest < ActiveSupport::TestCase
     host = FactoryBot.create(:host, :with_reports, :managed)
     refute host.build?
     refute host.last_report.blank?
-    host.update_attributes(:build => true)
+    host.update(:build => true)
     assert host.last_report.blank?
   end
 
@@ -3385,6 +3461,7 @@ class HostTest < ActiveSupport::TestCase
     end
 
     test "should create host with compute profile when compute_attributes are empty" do
+      @host.stubs(:vm_exists?).returns(true)
       @host.compute_resource.expects(:create_vm).once.with do |vm_attrs|
         vm_attrs['flavor_id'] == @compute_attrs.vm_attrs['flavor_id'] &&
         vm_attrs['availability_zone'] == @compute_attrs.vm_attrs['availability_zone']
@@ -3396,6 +3473,7 @@ class HostTest < ActiveSupport::TestCase
 
     test "should create host with compute profile when compute_attributes are nil" do
       @host.compute_attributes = nil
+      @host.stubs(:vm_exists?).returns(true)
       @host.compute_resource.expects(:create_vm).once.with do |vm_attrs|
         vm_attrs['flavor_id'] == @compute_attrs.vm_attrs['flavor_id'] &&
         vm_attrs['availability_zone'] == @compute_attrs.vm_attrs['availability_zone']
@@ -3421,6 +3499,7 @@ class HostTest < ActiveSupport::TestCase
         vm_attrs['flavor_id'].nil? &&
         vm_attrs['availability_zone'].nil?
       end
+      @host.stubs(:vm_exists?).returns(true)
 
       @host.valid?
       @host.send(:setCompute)
@@ -3491,7 +3570,7 @@ class HostTest < ActiveSupport::TestCase
       host.subnet.tftp_id = 2
       host.subnet.dhcp_id = 3
       host.subnet.dns_id = 4
-      assert host.smart_proxy_ids, [1,2,3,4]
+      assert host.smart_proxy_ids, [1, 2, 3, 4]
     end
 
     context 'from hostgroup' do
@@ -3587,13 +3666,35 @@ class HostTest < ActiveSupport::TestCase
     end
   end
 
+  test "should find smart proxy ids" do
+    host_1 = FactoryBot.create(:host, :with_tftp_orchestration)
+    host_2 = FactoryBot.create(:host, :with_dns_orchestration)
+    host_3 = FactoryBot.create(:host, :with_dhcp_orchestration)
+    host_4 = FactoryBot.create(:host, :with_realm)
+    host_5 = FactoryBot.create(:host, :with_puppet)
+    host_6 = FactoryBot.create(:host, :with_puppet_ca)
+
+    tftp_proxy_id = host_1.primary_interface.subnet.tftp_id
+    dns_proxy_id = host_2.primary_interface.subnet.dns_id
+    dhcp_proxy_id = host_3.primary_interface.subnet.dhcp_id
+    realm_proxy_id = host_4.realm.realm_proxy_id
+    puppet_id = host_5.puppet_proxy_id
+    puppet_ca_id = host_6.puppet_ca_proxy_id
+
+    res = Host.smart_proxy_ids(Host.where(:id => [host_1, host_2, host_3, host_4, host_5, host_6].map(&:id)))
+
+    [tftp_proxy_id, dns_proxy_id, dhcp_proxy_id, realm_proxy_id, puppet_id, puppet_ca_id].each do |id|
+      assert res.include?(id)
+    end
+  end
+
   private
 
   def setup_host_with_nic_parser(nic_attributes)
     host = FactoryBot.create(:host, :hostgroup => FactoryBot.create(:hostgroup))
     hash = { (nic_attributes.delete(:identifier) || :eth0) => nic_attributes
     }.with_indifferent_access
-    parser = stub(:interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
+    parser = stub(:class_name_humanized => 'TestParser', :interfaces => hash, :ipmi_interface => {}, :suggested_primary_interface => hash.to_a.first)
     [host, parser]
   end
 
@@ -3601,11 +3702,13 @@ class HostTest < ActiveSupport::TestCase
     host = FactoryBot.create(:host, :hostgroup => FactoryBot.create(:hostgroup))
     hash = ipmi_attributes.with_indifferent_access
     primary = host.primary_interface
-    parser = stub(:ipmi_interface => hash, :interfaces => {}, :suggested_primary_interface => [ primary.identifier, {:macaddress => primary.mac, :ipaddress => primary.ip} ])
+    parser = stub(:class_name_humanized => 'TestParser', :ipmi_interface => hash, :interfaces => {}, :suggested_primary_interface => [primary.identifier, {:macaddress => primary.mac, :ipaddress => primary.ip}])
     [host, parser]
   end
 
   def mock_parser(properties)
-    PuppetFactParser.new(properties)
+    parser = PuppetFactParser.new(properties)
+    parser.stubs(:class_name_humanized).returns('TestParser')
+    parser
   end
 end

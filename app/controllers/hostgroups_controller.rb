@@ -9,13 +9,13 @@ class HostgroupsController < ApplicationController
   before_action :taxonomy_scope, :only => [:new, :edit, :process_hostgroup]
 
   def index
-    @hostgroups = resource_base_search_and_page
     respond_to do |format|
       format.html do
+        @hostgroups = resource_base_search_and_page
         render :index
       end
       format.csv do
-        csv_response(@hostgroups)
+        csv_response(resource_base_with_search)
       end
     end
   end
@@ -43,7 +43,7 @@ class HostgroupsController < ApplicationController
     load_vars_for_ajax
     new.valid?
     @hostgroup = new
-    notice _("The following fields would need reviewing")
+    info _("The following fields would need reviewing")
     render :action => :new
   end
 
@@ -62,7 +62,7 @@ class HostgroupsController < ApplicationController
   end
 
   def update
-    if @hostgroup.update_attributes(hostgroup_params)
+    if @hostgroup.update(hostgroup_params)
       process_success :success_redirect => hostgroups_path
     else
       taxonomy_scope
@@ -83,10 +83,9 @@ class HostgroupsController < ApplicationController
   end
 
   def puppetclass_parameters
-    @obj = params[:hostgroup][:id].empty? ? Hostgroup.new(hostgroup_params) : Hostgroup.find(params[:hostgroup_id])
     Taxonomy.as_taxonomy @organization, @location do
       render :partial => "puppetclasses/classes_parameters",
-             :locals => { :obj => @obj }
+             :locals => { :obj => refresh_hostgroup }
     end
   end
 
@@ -94,17 +93,17 @@ class HostgroupsController < ApplicationController
     env_id = params[:environment_id] || params[:hostgroup][:environment_id]
     return not_found if env_id.to_i > 0 && !(@environment = Environment.find(env_id))
 
-    @hostgroup ||= Hostgroup.new
+    refresh_hostgroup
     @hostgroup.environment = @environment if @environment
 
     @hostgroup.puppetclasses = Puppetclass.where(:id => params[:hostgroup][:puppetclass_ids])
     @hostgroup.config_groups = ConfigGroup.where(:id => params[:hostgroup][:config_group_ids])
-    render :partial => 'puppetclasses/class_selection', :locals => {:obj => (@hostgroup), :type => 'hostgroup'}
+    render :partial => 'puppetclasses/class_selection', :locals => {:obj => @hostgroup, :type => 'hostgroup'}
   end
 
   def process_hostgroup
     define_parent
-    define_hostgroup
+    refresh_hostgroup
     inherit_parent_attributes
     load_vars_for_ajax
     reset_explicit_attributes
@@ -150,13 +149,16 @@ class HostgroupsController < ApplicationController
     end
   end
 
-  def define_hostgroup
+  def refresh_hostgroup
     if params[:hostgroup][:id].present?
       @hostgroup = Hostgroup.authorized(:view_hostgroups).find(params[:hostgroup][:id])
       @hostgroup.attributes = hostgroup_params
     else
       @hostgroup = Hostgroup.new(hostgroup_params)
     end
+
+    @hostgroup.lookup_values.each(&:validate_value)
+    @hostgroup
   end
 
   def inherit_parent_attributes

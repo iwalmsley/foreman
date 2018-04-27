@@ -16,6 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 class Role < ApplicationRecord
+  audited
   include Authorizable
   include ScopedSearchExtensions
   extend FriendlyId
@@ -28,7 +29,6 @@ class Role < ApplicationRecord
   ORG_ADMIN = 'Organization admin'
   VIEWER = 'Viewer'
 
-  audited
   has_associated_audits
   scope :givable, -> { where(:builtin => 0).order(:name) }
   scope :for_current_user, -> { User.current.admin? ? where('0 = 0') : where(:id => User.current.role_ids) }
@@ -301,8 +301,10 @@ class Role < ApplicationRecord
   end
 
   def find_filter(resource_type, current_filters, search)
+    # rubocop:disable Rails/FindBy
     Filter.where(:search => search, :role_id => id).joins(:permissions)
           .where("permissions.resource_type" => resource_type).first
+    # rubocop:enable Rails/FindBy
   end
 
   def filter_for_permission_add(resource_type, current_filters, search)

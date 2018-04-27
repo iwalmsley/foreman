@@ -9,11 +9,23 @@ module LayoutHelper
   end
 
   def button_group(*elements)
-    content_tag(:div,:class=>"btn-group") { elements.join(" ").html_safe }
+    content_tag(:div, :class=>"btn-group") { elements.join(" ").html_safe }
   end
 
   def search_bar(*elements)
     content_for(:search_bar) { elements.join(" ").html_safe }
+  end
+
+  def mount_breadcrumbs(options = {}, &block)
+    options = BreadcrumbsOptions.new(@page_header, controller_name, action_name, block_given? ? yield : options)
+
+    mount_react_component("BreadcrumbBar", "#breadcrumb", options.bar_props.to_json)
+  end
+
+  def breadcrumbs(options = {}, &block)
+    content_for(:breadcrumbs) do
+      mount_breadcrumbs(options, &block)
+    end
   end
 
   def stylesheet(*args)
@@ -33,7 +45,7 @@ module LayoutHelper
   end
 
   def base_errors_for(obj)
-    unless obj.errors[:base].blank?
+    if obj.errors[:base].present?
       alert :header => _("Unable to save"),
             :class  => 'alert-danger base in fade',
             :text   => obj.errors[:base].map { |e| '<li>'.html_safe + e + '</li>'.html_safe }.join.html_safe
@@ -55,7 +67,7 @@ module LayoutHelper
 
   def icon_text(i, text = "", opts = {})
     opts[:kind] ||= "glyphicon"
-    (content_tag(:span,"", :class=>"#{opts[:kind] + ' ' + opts[:kind]}-#{i} #{opts[:class]}", :title => opts[:title]) + " " + text).html_safe
+    (content_tag(:span, "", :class=>"#{opts[:kind] + ' ' + opts[:kind]}-#{i} #{opts[:class]}", :title => opts[:title]) + " " + text).html_safe
   end
 
   def alert(opts = {})
@@ -77,10 +89,10 @@ module LayoutHelper
   def alert_header(text, html_class = nil)
     case html_class
       when /alert-success/
-        icon = icon_text("ok", "",:kind => "pficon")
+        icon = icon_text("ok", "", :kind => "pficon")
         text ||= _("Notice")
       when /alert-warning/
-        icon = icon_text("warning-triangle-o", "",:kind => "pficon")
+        icon = icon_text("warning-triangle-o", "", :kind => "pficon")
         text ||= _("Warning")
       when /alert-info/
         icon = icon_text("info", "", :kind => "pficon")

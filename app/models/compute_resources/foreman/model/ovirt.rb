@@ -6,8 +6,7 @@ module Foreman::Model
     validates :url, :format => { :with => URI::DEFAULT_PARSER.make_regexp }, :presence => true,
               :url_schema => ['http', 'https']
     validates :user, :password, :presence => true
-    before_create :update_public_key
-    after_validation :update_available_operating_systems unless Rails.env.test?
+    after_validation :connect, :update_available_operating_systems unless Rails.env.test?
 
     alias_attribute :datacenter, :uuid
 
@@ -37,7 +36,7 @@ module Foreman::Model
 
     def find_vm_by_uuid(uuid)
       super
-    rescue OVIRT::OvirtException
+    rescue Fog::Ovirt::Errors::OvirtEngineError
       raise(ActiveRecord::RecordNotFound)
     end
 
@@ -93,7 +92,7 @@ module Foreman::Model
       super.merge({:mac => :mac})
     end
 
-    #FIXME
+    # FIXME
     def max_cpu_count
       8
     end
@@ -102,16 +101,27 @@ module Foreman::Model
       16.gigabytes
     end
 
+    def use_v4=(value)
+      value = case value
+              when true, '1'
+                true
+              else
+                false
+              end
+      self.attrs[:ovirt_use_v4] = value
+    end
+
+    def use_v4
+      self.attrs[:ovirt_use_v4] || false
+    end
+    alias_method :use_v4?, :use_v4
+
     def ovirt_quota=(ovirt_quota_id)
       self.attrs[:ovirt_quota_id] = ovirt_quota_id
     end
 
     def ovirt_quota
-      if self.attrs[:ovirt_quota_id].blank?
-        nil
-      else
-        self.attrs[:ovirt_quota_id]
-      end
+      self.attrs[:ovirt_quota_id].presence
     end
 
     def available_images
@@ -145,21 +155,29 @@ module Foreman::Model
 
     def test_connection(options = {})
       super
-      if errors[:url].empty? && errors[:username].empty? && errors[:password].empty?
-        update_public_key options
-        datacenters && test_https_required
-      end
+      connect(options)
+    end
+
+    def connect(options = {})
+      return unless connection_properties_valid?
+
+      update_public_key options
+      datacenters && test_https_required
     rescue => e
       case e.message
         when /404/
           errors[:url] << e.message
         when /302/
-          errors[:url] << 'HTTPS URL is required for API access'
+          errors[:url] << _('HTTPS URL is required for API access')
         when /401/
           errors[:user] << e.message
         else
           errors[:base] << e.message
       end
+    end
+
+    def connection_properties_valid?
+      errors[:url].empty? && errors[:username].empty? && errors[:password].empty?
     end
 
     def datacenters(options = {})
@@ -200,7 +218,7 @@ module Foreman::Model
     def start_vm(uuid)
       vm = find_vm_by_uuid(uuid)
       if vm.comment.include? "cloud-config"
-        vm.start_with_cloudinit(:blocking => true, :user_data => vm.comment)
+        vm.start_with_cloudinit(:blocking => true, :user_data => vm.comment, :use_custom_script => true)
         vm.comment = ''
         vm.save
       else
@@ -209,7 +227,7 @@ module Foreman::Model
     end
 
     def start_with_cloudinit(uuid, user_data = nil)
-      find_vm_by_uuid(uuid).start_with_cloudinit(:blocking => true, :user_data => user_data)
+      find_vm_by_uuid(uuid).start_with_cloudinit(:blocking => true, :user_data => user_data, :use_custom_script => true)
     end
 
     def sanitize_inherited_vm_attributes(args)
@@ -217,15 +235,15 @@ module Foreman::Model
       # * Blank values for these attributes, because oVirt will fail if empty values are present in VM definition
       # * Provided but identical to values present in the template or instance type
       # Instance type values take precedence on templates values
-      unless args[:template].blank?
+      if args[:template].present?
         template = template(args[:template])
-        cores = template.cores.to_i unless template.cores.blank?
-        memory = template.memory.to_i unless template.memory.blank?
+        cores = template.cores.to_i if template.cores.present?
+        memory = template.memory.to_i if template.memory.present?
       end
-      unless args[:instance_type].blank?
+      if args[:instance_type].present?
         instance_type = instance_type(args[:instance_type])
-        cores = instance_type.cores.to_i unless instance_type.cores.blank?
-        memory = instance_type.memory.to_i unless instance_type.memory.blank?
+        cores = instance_type.cores.to_i if instance_type.cores.present?
+        memory = instance_type.memory.to_i if instance_type.memory.present?
       end
       args.delete(:cores) if (args[:cores].blank? && cores) || (args[:cores].to_i == cores)
       args.delete(:memory) if (args[:memory].blank? && memory) || (args[:memory].to_i == memory)
@@ -236,7 +254,11 @@ module Foreman::Model
       args[:template] = args[:image_id] if args[:image_id]
 
       sanitize_inherited_vm_attributes(args)
+
+      preallocate_disks(args) if args[:volumes_attributes].present?
+
       vm = super({ :first_boot_dev => 'network', :quota => ovirt_quota }.merge(args))
+
       begin
         create_interfaces(vm, args[:interfaces_attributes])
         create_volumes(vm, args[:volumes_attributes])
@@ -245,6 +267,16 @@ module Foreman::Model
         raise e
       end
       vm
+    end
+
+    def preallocate_disks(args)
+      change_allocation_volumes = args[:volumes_attributes].values.select{ |x| x[:preallocate] == '1' }
+      if args[:template].present? && change_allocation_volumes.present?
+        disks = change_allocation_volumes.map do |volume|
+          { :id => volume[:id], :sparse => 'false', :format => 'raw', :storagedomain => volume[:storage_domain] }
+        end
+        args.merge!(:clone => true, :disks => disks)
+      end
     end
 
     def new_vm(attr = {})
@@ -314,13 +346,13 @@ module Foreman::Model
     def update_required?(old_attrs, new_attrs)
       return true if super(old_attrs, new_attrs)
 
-      new_attrs[:interfaces_attributes].each do |key, interface|
-        return true if (interface[:id].blank? || interface[:_delete] == '1') && key != 'new_interfaces' #ignore the template
-      end if new_attrs[:interfaces_attributes]
+      new_attrs[:interfaces_attributes]&.each do |key, interface|
+        return true if (interface[:id].blank? || interface[:_delete] == '1') && key != 'new_interfaces' # ignore the template
+      end
 
-      new_attrs[:volumes_attributes].each do |key, volume|
-        return true if (volume[:id].blank? || volume[:_delete] == '1') && key != 'new_volumes' #ignore the template
-      end if new_attrs[:volumes_attributes]
+      new_attrs[:volumes_attributes]&.each do |key, volume|
+        return true if (volume[:id].blank? || volume[:_delete] == '1') && key != 'new_volumes' # ignore the template
+      end
 
       false
     end
@@ -359,12 +391,15 @@ module Foreman::Model
         :ovirt_password   => password,
         :ovirt_url        => url,
         :ovirt_datacenter => uuid,
-        :ovirt_ca_cert_store => ca_cert_store(public_key)
+        :ovirt_ca_cert_store => ca_cert_store(public_key),
+        :public_key       => public_key,
+        :api_version      => use_v4? ? 'v4' : 'v3'
       )
       client.datacenters
       @client = client
     rescue => e
-      if e.message =~ /SSL_connect.*certificate verify failed/
+      if e.message =~ /SSL_connect.*certificate verify failed/ ||
+          e.message =~ /Peer certificate cannot be authenticated with given CA certificates/
         raise Foreman::FingerprintException.new(
           N_("The remote system presented a public key signed by an unidentified certificate authority. If you are sure the remote system is authentic, go to the compute resource edit page, press the 'Test Connection' or 'Load Datacenters' button and submit"),
           ca_cert
@@ -420,7 +455,7 @@ module Foreman::Model
     private
 
     def update_available_operating_systems
-      return false if errors[:url].any?
+      return false if errors.any?
       ovirt_operating_systems = client.operating_systems if client.respond_to?(:operating_systems)
 
       attrs[:available_operating_systems] = ovirt_operating_systems.map do |os|
@@ -429,7 +464,7 @@ module Foreman::Model
     rescue Foreman::FingerprintException
       logger.info "Unable to verify OS capabilities, SSL certificate verification failed"
       true
-    rescue OVIRT::OvirtException => e
+    rescue Fog::Ovirt::Errors::OvirtEngineError => e
       if e.message =~ /404/
         attrs[:available_operating_systems] ||= :unsupported
       else
@@ -453,12 +488,12 @@ module Foreman::Model
     end
 
     def create_interfaces(vm, attrs)
-      #first remove all existing interfaces
-      vm.interfaces.each do |interface|
-        #The blocking true is a work-around for ovirt bug, it should be removed.
+      # first remove all existing interfaces
+      vm.interfaces&.each do |interface|
+        # The blocking true is a work-around for ovirt bug, it should be removed.
         vm.destroy_interface(:id => interface.id, :blocking => true)
-      end if vm.interfaces
-      #add interfaces
+      end
+      # add interfaces
       interfaces = nested_attributes_for :interfaces, attrs
       interfaces.map do |interface|
         interface[:name] = default_iface_name(interfaces) if interface[:name].empty?
@@ -468,11 +503,11 @@ module Foreman::Model
     end
 
     def create_volumes(vm, attrs)
-      #add volumes
+      # add volumes
       volumes = nested_attributes_for :volumes, attrs
       volumes.map do |vol|
         set_preallocated_attributes!(vol, vol[:preallocate])
-        #The blocking true is a work-around for ovirt bug fixed in ovirt version 3.1.
+        # The blocking true is a work-around for ovirt bug fixed in ovirt version 3.1.
         vm.add_volume({:bootable => 'false', :quota => ovirt_quota, :blocking => api_version.to_f < 3.1}.merge(vol)) if vol[:id].blank?
       end
       vm.volumes.reload

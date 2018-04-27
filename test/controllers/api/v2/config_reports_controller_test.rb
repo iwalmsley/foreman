@@ -6,7 +6,7 @@ class Api::V2::ConfigReportsControllerTest < ActionController::TestCase
 
   describe "Non Admin User" do
     def setup
-      User.current = users(:one) #use an unprivileged user, not apiadmin
+      User.current = users(:one) # use an unprivileged user, not apiadmin
     end
 
     def create_a_puppet_transaction_report
@@ -48,6 +48,7 @@ class Api::V2::ConfigReportsControllerTest < ActionController::TestCase
       Setting[:require_ssl_smart_proxies] = false
 
       proxy = smart_proxies(:puppetmaster)
+      proxy.stubs(:associate_features)
       as_admin { proxy.update_attribute(:url, 'http://configreports.foreman') }
       host = URI.parse(proxy.url).host
       Resolv.any_instance.stubs(:getnames).returns([host])

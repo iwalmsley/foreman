@@ -40,12 +40,12 @@ class Redhat < Operatingsystem
   def self.shorten_description(description)
     return "" if description.blank?
     s = description.dup
-    s.gsub!('Red Hat Enterprise Linux','RHEL')
-    s.gsub!('release','')
-    s.gsub!(/\(.+?\)/,'')
+    s.gsub!('Red Hat Enterprise Linux', 'RHEL')
+    s.gsub!('release', '')
+    s.gsub!(/\(.+?\)/, '')
     s.squeeze! " "
     s.strip!
-    s.blank? ? description : s
+    s.presence || description
   end
 
   def pxe_kernel_options(params)

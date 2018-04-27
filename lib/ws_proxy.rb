@@ -26,11 +26,11 @@ class WsProxy
   def free_port?(port)
     socket = Socket.new :INET, :STREAM
     socket.bind(Socket.pack_sockaddr_in(port, '127.0.0.1'))
-    return true
+    true
   rescue Errno::EADDRINUSE
-    return false
+    false
   ensure
-    socket.close unless socket.nil?
+    socket&.close
   end
 
   def start_proxy

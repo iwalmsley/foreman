@@ -3,10 +3,9 @@ require 'integration_test_helper'
 class UserIntegrationTest < IntegrationTestWithJavascript
   # intermittent failures:
   #   UserIntegrationTest.test_0002_edit page
-  extend Minitest::OptionalRetry
 
   test "index page" do
-    assert_index_page(users_path,"Users","Create User")
+    assert_index_page(users_path, "Users", "Create User")
   end
 
   test "edit page" do

@@ -6,11 +6,11 @@ module Middleware
 
     def call(env)
       @app.call(env)
-    rescue ActionDispatch::ParamsParser::ParseError, ActionDispatch::Http::Parameters::ParseError => error
+    rescue ActionDispatch::Http::Parameters::ParseError => error
       if env['HTTP_ACCEPT'] =~ /application\/json/ || env['CONTENT_TYPE'] =~ /application\/json/
         error_output = "There was a problem in the JSON you submitted: #{error}"
         Rails.logger.debug(error_output)
-        return [
+        [
           400, { "Content-Type" => "application/json" },
           [{ :status => 400, :error => error_output }.to_json]
         ]

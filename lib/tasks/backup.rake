@@ -21,7 +21,7 @@ END_DESC
   task :dump => :environment do
     config      = Rails.configuration.database_configuration[Rails.env]
     backup_dir  = File.expand_path('../../../db', __FILE__)
-    backup_name = ENV['destination'] || File.join(backup_dir,"foreman.#{Time.now.to_i}")
+    backup_name = ENV['destination'] || File.join(backup_dir, "foreman.#{Time.now.to_i}")
     unless ENV["destination"].present?
       if config["adapter"] == "sqlite3"
         backup_name << '.sqlite3'
@@ -61,7 +61,7 @@ END_DESC
     cmd += " -p#{config['password']} " if config['password'].present?
     cmd += " -h #{config['host']} "    if config['host'].present?
     cmd += " -P #{config['port']} "    if config['port'].present?
-    cmd += " #{tables.join(' ')} " unless tables.blank?
+    cmd += " #{tables.join(' ')} " if tables.present?
     cmd += " > #{name}"
     system(cmd)
   end
@@ -70,7 +70,7 @@ END_DESC
     cmd = "pg_dump -Fc #{config['database']} -U #{config['username']} "
     cmd += " -h #{config['host']} "    if config['host'].present?
     cmd += " -p #{config['port']} "    if config['port'].present?
-    cmd += " " + (tables.map {|t| "-t #{t}"}).join(" ") + " " unless tables.blank?
+    cmd += " " + (tables.map {|t| "-t #{t}"}).join(" ") + " " if tables.present?
     cmd += " > #{name}"
     system({'PGPASSWORD' => config['password']}, cmd)
   end

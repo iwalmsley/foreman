@@ -4,6 +4,10 @@ class SmartProxiesControllerTest < ActionController::TestCase
   basic_pagination_rendered_test
   basic_pagination_per_page_test
 
+  setup do
+    SmartProxy.any_instance.stubs(:associate_features).returns(true)
+  end
+
   def test_index
     get :index, session: set_session_user
     assert_template 'index'
@@ -61,7 +65,7 @@ class SmartProxiesControllerTest < ActionController::TestCase
     SmartProxy.any_instance.stubs(:associate_features).returns(true)
     post :refresh, params: { :id => proxy }, session: set_session_user
     assert_redirected_to smart_proxies_url
-    assert_equal "No changes found when refreshing features from DHCP Proxy.", flash[:notice]
+    assert_equal "No changes found when refreshing features from DHCP Proxy.", flash[:success]
   end
 
   def test_refresh_change
@@ -70,7 +74,7 @@ class SmartProxiesControllerTest < ActionController::TestCase
     SmartProxy.any_instance.stubs(:features).returns([features(:dns)]).then.returns([features(:dns), features(:tftp)])
     post :refresh, params: { :id => proxy }, session: set_session_user
     assert_redirected_to smart_proxies_url
-    assert_equal "Successfully refreshed features from DHCP Proxy.", flash[:notice]
+    assert_equal "Successfully refreshed features from DHCP Proxy.", flash[:success]
   end
 
   def test_refresh_fail
@@ -115,6 +119,24 @@ class SmartProxiesControllerTest < ActionController::TestCase
     assert_match(/Exception message/, show_response['message'])
   end
 
+  test "smart proxy version mismatched" do
+    expected_response = {'version' => '1.11', 'modules' => {'dns' => '1.11'}}
+    ProxyStatus::Version.any_instance.stubs(:version).returns(expected_response)
+    get :ping, params: { :id => smart_proxies(:one).to_param }, session: set_session_user
+    assert_response :success
+    show_response = ActiveSupport::JSON.decode(@response.body)
+    assert_match(/versions do not match/, show_response['message']['warning']['message'])
+  end
+
+  test "smart proxy version with different tags matched" do
+    expected_response = {'version' => "#{Foreman::Version.new.notag}-testtag", 'modules' => {'dns' => '1.11'}}
+    ProxyStatus::Version.any_instance.stubs(:version).returns(expected_response)
+    get :ping, params: { :id => smart_proxies(:one).to_param }, session: set_session_user
+    assert_response :success
+    show_response = ActiveSupport::JSON.decode(@response.body)
+    assert_nil show_response['message']['warning']
+  end
+
   test '#show' do
     proxy = smart_proxies(:one)
     get :show, params: { :id => proxy.id }, session: set_session_user
@@ -145,7 +167,7 @@ class SmartProxiesControllerTest < ActionController::TestCase
     assert_response :success
     assert_template 'smart_proxies/plugins/_puppet_envs'
     assert @response.body.include?('special_environment')
-    assert @response.body.include?('5') #the total is correct
+    assert @response.body.include?('5') # the total is correct
   end
 
   test '#puppet_dashboard' do

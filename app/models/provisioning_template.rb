@@ -1,8 +1,12 @@
 class ProvisioningTemplate < Template
+  audited
+  has_many :audits, :as => :auditable, :class_name => Audited.audit_class.name
+
   include Authorizable
   extend FriendlyId
   friendly_id :name
   include Parameterizable::ByIdName
+  include DirtyAssociations
 
   class << self
     # we have to override the base_class because polymorphic associations does not detect it correctly, more details at
@@ -12,9 +16,6 @@ class ProvisioningTemplate < Template
     end
   end
   self.table_name = 'templates'
-
-  audited
-  has_many :audits, :as => :auditable, :class_name => Audited.audit_class.name
 
   validates :name, :uniqueness => true
   validates :template_kind_id, :presence => true, :unless => Proc.new {|t| t.snippet }
@@ -37,6 +38,8 @@ class ProvisioningTemplate < Template
   scoped_search :on => :locked,  :complete_value => {:true => true, :false => false}
   scoped_search :on => :snippet, :complete_value => {:true => true, :false => false}
   scoped_search :on => :template
+  scoped_search :on => :vendor, :only_explicit => true, :complete_value => true
+  scoped_search :on => :default, :only_explicit => true, :complete_value => {:true => true, :false => false}
 
   scoped_search :relation => :operatingsystems, :on => :name, :rename => :operatingsystem, :complete_value => true
   scoped_search :relation => :environments,     :on => :name, :rename => :environment,     :complete_value => true
@@ -45,6 +48,8 @@ class ProvisioningTemplate < Template
 
   attr_exportable :kind => Proc.new { |template| template.template_kind.try(:name) },
                   :oses => Proc.new { |template| template.operatingsystems.map(&:name).uniq }
+
+  dirty_has_many_associations :template_combinations, :os_default_templates, :operatingsystems
 
   # Override method in Taxonomix as Template is not used attached to a Host,
   # and matching a Host does not prevent removing a template from its taxonomy.
@@ -93,32 +98,32 @@ class ProvisioningTemplate < Template
 
     if opts[:hostgroup_id] && opts[:environment_id]
       # try to find a full match to our host group and environment
-      template ||= templates.joins(:template_combinations).where(
+      template ||= templates.joins(:template_combinations).find_by(
         "template_combinations.hostgroup_id" => opts[:hostgroup_id],
-        "template_combinations.environment_id" => opts[:environment_id]).first
+        "template_combinations.environment_id" => opts[:environment_id])
     end
 
     if opts[:hostgroup_id]
       # try to find a match with our hostgroup only
-      template ||= templates.joins(:template_combinations).where(
+      template ||= templates.joins(:template_combinations).find_by(
         "template_combinations.hostgroup_id" => opts[:hostgroup_id],
-        "template_combinations.environment_id" => nil).first
+        "template_combinations.environment_id" => nil)
     end
 
     if opts[:environment_id]
       # search for a template based only on our environment
-      template ||= templates.joins(:template_combinations).where(
+      template ||= templates.joins(:template_combinations).find_by(
         "template_combinations.hostgroup_id" => nil,
-        "template_combinations.environment_id" => opts[:environment_id]).first
+        "template_combinations.environment_id" => opts[:environment_id])
     end
 
     # fall back to the os default template
-    template ||= templates.joins(:os_default_templates).where("os_default_templates.operatingsystem_id" => opts[:operatingsystem_id]).first
+    template ||= templates.joins(:os_default_templates).find_by("os_default_templates.operatingsystem_id" => opts[:operatingsystem_id])
     template.is_a?(ProvisioningTemplate) ? template : nil
   end
 
   def self.find_global_default_template(name, kind)
-    ProvisioningTemplate.unscoped.joins(:template_kind).where(:name => name, "template_kinds.name" => kind).first
+    ProvisioningTemplate.unscoped.joins(:template_kind).find_by(:name => name, "template_kinds.name" => kind)
   end
 
   def self.local_boot_name(kind)
@@ -197,7 +202,7 @@ class ProvisioningTemplate < Template
     ProvisioningTemplate.joins(:template_kind).where("template_kinds.name" => "provision").includes(:template_combinations => [:environment, {:hostgroup => [ :operatingsystem, :architecture, :medium]}]).each do |template|
       template.template_combinations.each do |combination|
         hostgroup = combination.hostgroup
-        if hostgroup && hostgroup.operatingsystem && hostgroup.architecture && hostgroup.medium
+        if hostgroup&.operatingsystem && hostgroup.architecture && hostgroup.medium
           combos << {
             :hostgroup => hostgroup,
             :template => template,
@@ -219,6 +224,20 @@ class ProvisioningTemplate < Template
   end
 
   private
+
+  def import_custom_data(options)
+    self.template_kind = nil if self.snippet
+
+    if @importing_metadata.key?('kind') && !self.snippet && associate_metadata_on_import?(options)
+      kind = TemplateKind.find_by_name @importing_metadata['kind']
+      if kind.nil?
+        errors.add :template_kind_id, _('specified template "%s" kind was not found') % @importing_metadata['kind']
+        return
+      end
+      self.template_kind = kind
+    end
+    import_oses(options)
+  end
 
   def allowed_changes
     super + %w(template_combinations template_associations)

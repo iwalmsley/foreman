@@ -85,12 +85,12 @@ class UsersControllerTest < ActionController::TestCase
   test "should not remove the default role" do
     user = User.create :login => "foo", :mail => "foo@bar.com", :auth_source => auth_sources(:one)
 
-    assert user.roles =([roles(:default_role)])
+    assert user.roles =[roles(:default_role)]
 
     put :update, params: { :id => user.id, :user => {:login => "johnsmith"} }, session: set_session_user
     mod_user = User.unscoped.find_by_id(user.id)
 
-    assert mod_user.roles =([roles(:default_role)])
+    assert mod_user.roles =[roles(:default_role)]
   end
 
   test "should set password" do
@@ -179,7 +179,8 @@ class UsersControllerTest < ActionController::TestCase
     delete :destroy, params: { :id => user.id }, session: set_session_user.merge(:user => user.id)
     assert_redirected_to users_url
     assert User.unscoped.exists?(user.id)
-    assert_equal @request.flash[:warning], 'You cannot delete this user while logged in as this user'
+    assert_equal @request.flash[:warning][:message], 'You cannot delete this user while logged in as this user'
+    assert_equal @request.flash[:warning][:link], { text: _("Logout"), href: logout_users_url }
   end
 
   test 'user with viewer rights should fail to edit a user' do
@@ -208,7 +209,7 @@ class UsersControllerTest < ActionController::TestCase
       "id"     => user.id}
     put :update, params: update_hash, session: set_session_user.merge(:user => user.id)
 
-    assert !User.unscoped.find_by_login(user.login).mail.blank?
+    assert User.unscoped.find_by_login(user.login).mail.present?
   end
 
   test "should login external user" do
@@ -437,7 +438,7 @@ class UsersControllerTest < ActionController::TestCase
 
   context 'default taxonomies' do
     test 'accessing a regular page sets default taxonomies' do
-      users(:one).update_attributes(:default_location_id     => taxonomies(:location1).id,
+      users(:one).update(:default_location_id     => taxonomies(:location1).id,
                                     :default_organization_id => taxonomies(:organization1).id,
                                     :password                => 'changeme')
 
@@ -447,7 +448,7 @@ class UsersControllerTest < ActionController::TestCase
     end
 
     test 'users can update their own default taxonomies' do
-      users(:one).update_attributes(:locations     => [taxonomies(:location1)],
+      users(:one).update(:locations     => [taxonomies(:location1)],
                                     :organizations => [taxonomies(:organization1)])
 
       put :update, params: { :id   => users(:one).id,

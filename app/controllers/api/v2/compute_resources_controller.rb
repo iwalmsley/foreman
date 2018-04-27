@@ -36,6 +36,7 @@ module Api
           param :password, String, :desc => N_("Password for oVirt, EC2, VMware, OpenStack. Secret key for EC2")
           param :uuid, String, :desc => N_("Deprecated, please use datacenter") # FIXME: deprecated
           param :datacenter, String, :desc => N_("for oVirt, VMware Datacenter")
+          param :use_v4, :bool, :desc => N_("for oVirt only")
           param :region, String, :desc => N_("for EC2 only")
           param :tenant, String, :desc => N_("for OpenStack only")
           param :domain, String, :desc => N_("for OpenStack only")
@@ -60,7 +61,7 @@ module Api
       param_group :compute_resource
 
       def update
-        process_response @compute_resource.update_attributes(compute_resource_params)
+        process_response @compute_resource.update(compute_resource_params)
       end
 
       api :DELETE, "/compute_resources/:id/", N_("Delete a compute resource")

@@ -12,7 +12,7 @@ module ComputeResourcesVmsHelper
   end
 
   def vm_console(host, vm)
-    if vm && vm.ready?
+    if vm&.ready?
       link_to_if_authorized(_("Console"), hash_for_console_host_path().merge(:auth_object => host, :permission => 'console_hosts'),
                             { :class => "btn btn-info" })
     else
@@ -87,16 +87,14 @@ module ComputeResourcesVmsHelper
   end
 
   def vsphere_datastores(compute)
-    compute.datastores.inject({}) do |hsh, datastore|
+    compute.datastores.each_with_object({}) do |datastore, hsh|
       hsh[datastore.name] = datastore_stats(datastore)
-      hsh
     end
   end
 
   def vsphere_storage_pods(compute)
-    compute.storage_pods.inject({}) do |hsh, pod|
+    compute.storage_pods.each_with_object({}) do |pod, hsh|
       hsh[pod.name] = storage_pod_stats(pod)
-      hsh
     end
   end
 

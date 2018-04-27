@@ -91,7 +91,7 @@ class UnattendedController < ApplicationController
   end
 
   def verify_valid_host_token
-    return unless @host && @host.token_expired?
+    return unless @host&.token_expired?
     render_custom_error(
       :precondition_failed,
       N_('%{controller}: provisioning token for host %{host} expired'),
@@ -173,9 +173,16 @@ class UnattendedController < ApplicationController
         mac_list = []
       end
     end
+
+    if params.key?(:mac)
+      mac_list << params[:mac].strip.downcase
+    end
+
     # we try to match first based on the MAC, falling back to the IP
+    candidates = Host.joins(:provision_interface).where(mac_list.empty? ? {:nics => {:ip => ip}} : ["lower(nics.mac) IN (?)", mac_list]).order(:created_at)
+    logger.warn("Multiple hosts found with #{ip} or #{mac_list}, picking up the most recent") if candidates.count > 1
+    host = candidates.last
     # host is readonly because of association so we reload it if we find it
-    host = Host.joins(:provision_interface).where(mac_list.empty? ? {:nics => {:ip => ip}} : ["lower(nics.mac) IN (?)", mac_list]).first
     host ? Host.find(host.id) : nil
   end
 
@@ -195,7 +202,7 @@ class UnattendedController < ApplicationController
     # error so the installer knows something is wrong. This is tested with
     # Anaconda, but maybe Suninstall will choke on it.
     render(:plain => _("Failed to clean any old certificates or add the autosign entry. Terminating the build!"), :status => :internal_server_error) unless @host.handle_ca
-    #TODO: Email the user who initiated this build operation.
+    # TODO: Email the user who initiated this build operation.
   end
 
   # Reset realm OTP. This is run as a before_action for provisioning templates.
@@ -223,7 +230,7 @@ class UnattendedController < ApplicationController
 
     # @host has been changed even if the save fails, so we have to change it back
     old_ip = @host.ip
-    @host.ip = old_ip unless @host.update_attributes({'ip' => ip})
+    @host.ip = old_ip unless @host.update({'ip' => ip})
   end
 
   def ip_from_request_env
@@ -249,9 +256,9 @@ class UnattendedController < ApplicationController
     end
 
     begin
-      render :plain => unattended_render(@unsafe_template_content, @template_name)
+      render :inline => "<%= unattended_render(@unsafe_template_content, @template_name).html_safe %>"
     rescue => error
-      msg = _("There was an error rendering the %s template: ") % (@template_name)
+      msg = _("There was an error rendering the %s template: ") % @template_name
       Foreman::Logging.exception(msg, error)
       render :plain => msg + error.message, :status => :internal_server_error
     end

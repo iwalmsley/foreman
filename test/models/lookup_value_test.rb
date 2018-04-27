@@ -31,7 +31,7 @@ class LookupValueTest < ActiveSupport::TestCase
   test "update lookup value by admin" do
     lookup_value = lookup_values(:hostgroupcommon)
     as_admin do
-      assert lookup_value.update_attributes!(:value => "9000")
+      assert lookup_value.update!(:value => "9000")
     end
   end
 
@@ -143,7 +143,7 @@ class LookupValueTest < ActiveSupport::TestCase
   test "shuld not cast string with erb" do
     key = FactoryBot.create(:puppetclass_lookup_key, :as_smart_class_param,
                             :override => true, :key_type => 'array', :merge_overrides => true, :avoid_duplicates => true,
-                            :default_value => [1,2,3], :puppetclass => puppetclasses(:one))
+                            :default_value => [1, 2, 3], :puppetclass => puppetclasses(:one))
 
     lv = LookupValue.new(:value => "<%= [4,5,6] %>", :match => "hostgroup=Common", :lookup_key => key)
     # does not cast on save (validate_and_cast_value)
@@ -154,21 +154,21 @@ class LookupValueTest < ActiveSupport::TestCase
   end
 
   test "boolean lookup value should allow for false value" do
-    #boolean key
+    # boolean key
     key = lookup_keys(:three)
     value = LookupValue.new(:value => false, :match => "hostgroup=Common", :lookup_key_id => key.id)
     assert value.valid?
   end
 
   test "boolean lookup value should not allow for nil value" do
-    #boolean key
+    # boolean key
     key = lookup_keys(:three)
     value = LookupValue.new(:value => nil, :match => "hostgroup=Common", :lookup_key_id => key.id)
     refute value.valid?
   end
 
   test "boolean lookup value should allow nil value if omit is true" do
-    #boolean key
+    # boolean key
     key = lookup_keys(:three)
     value = LookupValue.new(:value => nil, :match => "hostgroup=Common", :lookup_key_id => key.id, :omit => true)
     assert_valid value
@@ -278,7 +278,7 @@ EOF
 
   test "path should return the correct path for the key" do
     value = LookupValue.new(:match => 'fqdn=abc.example.com')
-    assert_equal('fqdn',value.path)
+    assert_equal('fqdn', value.path)
     value.match = "hostgroup=Common,domain=example.com"
     assert_equal('hostgroup,domain', value.path)
   end

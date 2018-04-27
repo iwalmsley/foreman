@@ -164,7 +164,7 @@ class SettingTest < ActiveSupport::TestCase
   end
 
   def test_set_method_prepares_attrs_for_creation
-    options = Setting.set "test_attr", "some_description", "default_value", "full_name","my_value"
+    options = Setting.set "test_attr", "some_description", "default_value", "full_name", "my_value"
     assert_equal "test_attr", options[:name]
     assert_equal "some_description", options[:description]
     assert_equal "default_value", options[:default]
@@ -204,11 +204,12 @@ class SettingTest < ActiveSupport::TestCase
     setting_name = "foo_#{rand(1000000)}"
     Setting.create!(:name => setting_name, :value => "bar", :default => "default", :description => "foo")
 
-    SETTINGS.stubs(:key?).with(setting_name.to_sym).returns(true)
-    SETTINGS.stubs(:[]).with(setting_name.to_sym).returns("no-bar")
+    SETTINGS[setting_name.to_sym] = "no-bar"
 
     persisted = Setting.create!(:name => setting_name, :description => "foo", :default => "default")
     assert_equal "no-bar", persisted.value
+  ensure
+    SETTINGS.delete(setting_name.to_sym)
   end
 
   def test_first_or_create_works
@@ -221,7 +222,7 @@ class SettingTest < ActiveSupport::TestCase
 
   # tests for saving settings attributes
   def test_settings_should_save_arrays
-    check_properties_saved_and_loaded_ok :name => "foo", :value => [1,2,3,'b'], :default => ['b',"b"], :description => "test foo"
+    check_properties_saved_and_loaded_ok :name => "foo", :value => [1, 2, 3, 'b'], :default => ['b', "b"], :description => "test foo"
   end
 
   def test_settings_should_save_hashes
@@ -301,14 +302,14 @@ class SettingTest < ActiveSupport::TestCase
     check_zero_value_not_allowed_for 'puppet_interval'
   end
 
-  test "trusted_puppetmaster_hosts can be empty array" do
-    check_empty_array_allowed_for "trusted_puppetmaster_hosts"
+  test "trusted_hosts can be empty array" do
+    check_empty_array_allowed_for "trusted_hosts"
   end
 
-  test "trusted_puppetmaster_hosts must have comma separated values" do
-    attrs = { :name => "trusted_puppetmaster_hosts", :default => [], :description => "desc" }
+  test "trusted_hosts must have comma separated values" do
+    attrs = { :name => "trusted_hosts", :default => [], :description => "desc" }
     assert Setting.where(:name => attrs[:name]).first || Setting.create(attrs)
-    setting = Setting.find_by_name("trusted_puppetmaster_hosts")
+    setting = Setting.find_by_name("trusted_hosts")
     setting.value = ["localhost", "remotehost"]
     assert setting.save
     setting.value = ["localhost remotehost"]
@@ -572,17 +573,17 @@ class SettingTest < ActiveSupport::TestCase
   def check_value_returns_from_cache_with(options = {})
     name = options[:name].to_s
 
-    #cache must be cleared on create
+    # cache must be cleared on create
     Rails.cache.write(name, "old value")
     assert Setting.create(options)
     assert_nil Rails.cache.read(name)
 
-    #first time getter method, write the cache
+    # first time getter method, write the cache
     Rails.cache.delete(name)
     assert_equal options[:value], Setting[name]
     assert_equal options[:value], Rails.cache.read(name)
 
-    #setter method deletes the cache
+    # setter method deletes the cache
     Setting[name] = options[:value]
     assert_nil Rails.cache.read(name)
   end

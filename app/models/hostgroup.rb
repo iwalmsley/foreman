@@ -1,4 +1,5 @@
 class Hostgroup < ApplicationRecord
+  audited
   include Authorizable
   extend FriendlyId
   friendly_id :title
@@ -11,6 +12,7 @@ class Hostgroup < ApplicationRecord
   validates :name, :presence => true, :uniqueness => {:scope => :ancestry, :case_sensitive => false}
 
   validate :validate_subnet_types
+  validates_with SubnetsConsistencyValidator
 
   include ScopedSearchExtensions
   include SelectiveClone
@@ -53,9 +55,9 @@ class Hostgroup < ApplicationRecord
 
   scoped_search :on => :name, :complete_value => :true
   scoped_search :relation => :group_parameters,    :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
-  scoped_search :relation => :hosts, :on => :name, :complete_value => :true, :rename => "host"
+  scoped_search :relation => :hosts, :on => :name, :complete_value => :true, :rename => "host", :only_explicit => true
   scoped_search :relation => :puppetclasses, :on => :name, :complete_value => true, :rename => :class, :only_explicit => true, :operators => ['= ', '~ ']
-  scoped_search :relation => :environment, :on => :name, :complete_value => :true, :rename => :environment
+  scoped_search :relation => :environment, :on => :name, :complete_value => :true, :rename => :environment, :only_explicit => true
   scoped_search :on => :id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
   # for legacy purposes, keep search on :label
   scoped_search :on => :title, :complete_value => true, :rename => :label
@@ -66,20 +68,20 @@ class Hostgroup < ApplicationRecord
     hostgroup_ids = Hostgroup.unscoped.with_taxonomy_scope.joins(:config_groups).where(conditions).map(&:subtree_ids).flatten.uniq
 
     opts = 'hostgroups.id < 0'
-    opts = "hostgroups.id IN(#{hostgroup_ids.join(',')})" unless hostgroup_ids.blank?
+    opts = "hostgroups.id IN(#{hostgroup_ids.join(',')})" if hostgroup_ids.present?
     {:conditions => opts}
   end
 
   if SETTINGS[:unattended]
-    scoped_search :relation => :architecture,     :on => :name,        :complete_value => true,  :rename => :architecture
-    scoped_search :relation => :operatingsystem,  :on => :name,        :complete_value => true,  :rename => :os
-    scoped_search :relation => :operatingsystem,  :on => :description, :complete_value => true,  :rename => :os_description
-    scoped_search :relation => :operatingsystem,  :on => :title,       :complete_value => true,  :rename => :os_title
-    scoped_search :relation => :operatingsystem,  :on => :major,       :complete_value => true,  :rename => :os_major
-    scoped_search :relation => :operatingsystem,  :on => :minor,       :complete_value => true,  :rename => :os_minor
+    scoped_search :relation => :architecture,     :on => :name,        :complete_value => true,  :rename => :architecture, :only_explicit => true
+    scoped_search :relation => :operatingsystem,  :on => :name,        :complete_value => true,  :rename => :os, :only_explicit => true
+    scoped_search :relation => :operatingsystem,  :on => :description, :complete_value => true,  :rename => :os_description, :only_explicit => true
+    scoped_search :relation => :operatingsystem,  :on => :title,       :complete_value => true,  :rename => :os_title, :only_explicit => true
+    scoped_search :relation => :operatingsystem,  :on => :major,       :complete_value => true,  :rename => :os_major, :only_explicit => true
+    scoped_search :relation => :operatingsystem,  :on => :minor,       :complete_value => true,  :rename => :os_minor, :only_explicit => true
     scoped_search :relation => :operatingsystem,  :on => :id,          :complete_enabled => false, :rename => :os_id, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
-    scoped_search :relation => :medium,           :on => :name,        :complete_value => true, :rename => "medium"
-    scoped_search :relation => :provisioning_templates, :on => :name,  :complete_value => true, :rename => "template"
+    scoped_search :relation => :medium,           :on => :name,        :complete_value => true, :rename => "medium", :only_explicit => true
+    scoped_search :relation => :provisioning_templates, :on => :name,  :complete_value => true, :rename => "template", :only_explicit => true
   end
 
   # returns reports for hosts in the User's filter set
@@ -101,10 +103,14 @@ class Hostgroup < ApplicationRecord
       :subnet6, :realm, :root_pass, :description, :pxe_loader
   end
 
-  #TODO: add a method that returns the valid os for a hostgroup
+  # TODO: add a method that returns the valid os for a hostgroup
 
   def hostgroup
     self
+  end
+
+  def self.title_name
+    "title".freeze
   end
 
   def diskLayout
@@ -132,7 +138,7 @@ class Hostgroup < ApplicationRecord
 
   def inherited_lookup_value(key)
     ancestors.reverse_each do |hg|
-      if (v = LookupValue.where(:lookup_key_id => key.id, :id => hg.lookup_values).first)
+      if (v = LookupValue.find_by(:lookup_key_id => key.id, :id => hg.lookup_values))
         return v.value, hg.to_label
       end
     end if key.path_elements.flatten.include?("hostgroup") && Setting["host_group_matchers_inheritance"]
@@ -167,7 +173,7 @@ class Hostgroup < ApplicationRecord
     # read common parameters
     CommonParameter.where(nil).find_each {|p| parameters.update Hash[p.name => p.value] }
     # read OS parameters
-    operatingsystem.os_parameters.each {|p| parameters.update Hash[p.name => p.value] } if operatingsystem
+    operatingsystem&.os_parameters&.each {|p| parameters.update Hash[p.name => p.value] }
     # read group parameters only if a host belongs to a group
     parameters.update self.parameters if hostgroup
     parameters
@@ -175,14 +181,14 @@ class Hostgroup < ApplicationRecord
 
   # no need to store anything in the db if the password is our default
   def root_pass
-    return read_attribute(:root_pass) if read_attribute(:root_pass).present?
+    return self[:root_pass] if self[:root_pass].present?
     npw = nested_root_pw
     return npw if npw.present?
     Setting[:root_pass]
   end
 
   def explicit_pxe_loader
-    read_attribute(:pxe_loader).presence
+    self[:pxe_loader].presence
   end
 
   def pxe_loader
@@ -239,7 +245,7 @@ class Hostgroup < ApplicationRecord
 
   def nested_root_pw
     Hostgroup.sort_by_ancestry(ancestors).reverse_each do |a|
-      return a.root_pass unless a.root_pass.blank?
+      return a.root_pass if a.root_pass.present?
     end if ancestry.present?
     nil
   end

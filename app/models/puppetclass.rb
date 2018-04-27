@@ -1,4 +1,5 @@
 class Puppetclass < ApplicationRecord
+  audited
   include Authorizable
   include ScopedSearchExtensions
   extend FriendlyId
@@ -24,7 +25,6 @@ class Puppetclass < ApplicationRecord
   accepts_nested_attributes_for :class_params, :reject_if => ->(a) { a[:key].blank? }, :allow_destroy => true
 
   validates :name, :uniqueness => true, :presence => true, :no_whitespace => true
-  audited
 
   alias_attribute :smart_variables, :lookup_keys
   alias_attribute :smart_variable_ids, :lookup_key_ids
@@ -76,7 +76,7 @@ class Puppetclass < ApplicationRecord
 
   # returns class name (excluding of the module name)
   def klass
-    name.gsub(module_name+"::","")
+    name.gsub(module_name+"::", "")
   end
 
   def all_hostgroups(with_descendants = true, unsorted = false)
@@ -100,7 +100,7 @@ class Puppetclass < ApplicationRecord
   def self.search_by_host(key, operator, value)
     conditions = sanitize_sql_for_conditions(["hosts.name #{operator} ?", value_to_sql(operator, value)])
     direct     = Puppetclass.joins(:hosts).where(conditions).pluck('puppetclasses.id').uniq
-    hostgroup  = Hostgroup.joins(:hosts).where(conditions).first
+    hostgroup  = Hostgroup.joins(:hosts).find_by(conditions)
     indirect   = hostgroup.blank? ? [] : HostgroupClass.where(:hostgroup_id => hostgroup.path_ids).distinct.pluck('puppetclass_id')
     return { :conditions => "1=0" } if direct.blank? && indirect.blank?
 

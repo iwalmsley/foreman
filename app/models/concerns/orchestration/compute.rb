@@ -3,6 +3,7 @@ require 'timeout'
 
 module Orchestration::Compute
   extend ActiveSupport::Concern
+  include Orchestration::Common
 
   included do
     attr_accessor :compute_attributes, :vm
@@ -21,7 +22,7 @@ module Orchestration::Compute
       # this is mostly relevant when the orchestration had a failure, and later on in the ui we try to retrieve the server again.
       # or when the server was removed not via foreman.
     elsif compute_resource_id.present? && compute_attributes
-      compute_resource.new_vm compute_attributes rescue nil
+      compute_resource.new_vm compute_attributes
     end
   end
 
@@ -36,7 +37,7 @@ module Orchestration::Compute
   protected
 
   def queue_compute
-    return unless compute? && errors.empty?
+    return log_orchestration_errors unless compute? && errors.empty?
     # Create a new VM if it doesn't already exist or update an existing vm
     vm_exists? ? queue_compute_create : queue_compute_update
   end
@@ -107,7 +108,7 @@ module Orchestration::Compute
     compute_attributes.except!(:user_data) # Unset any badly formatted data
     # since we enable certificates/autosign via here, we also need to make sure we clean it up in case of an error
     if puppetca?
-      respond_to?(:initialize_puppetca,true) && initialize_puppetca && delCertificate && delAutosign
+      respond_to?(:initialize_puppetca, true) && initialize_puppetca && delCertificate && delAutosign
     else
       true
     end
@@ -225,7 +226,7 @@ module Orchestration::Compute
     return nil if compute_attributes.nil?
     image_uuid = compute_attributes[:image_id] || compute_attributes[:image_ref]
     return nil if image_uuid.blank?
-    Image.where(:uuid => image_uuid, :compute_resource_id => compute_resource_id).first
+    Image.find_by(:uuid => image_uuid, :compute_resource_id => compute_resource_id)
   end
 
   def validate_compute_provisioning
@@ -343,7 +344,7 @@ module Orchestration::Compute
 
       # validate_foreman_attr handles the failure msg, so we just bubble
       # the false state up the stack
-      return false unless validate_required_foreman_attr(mac,Nic::Base.physical,:mac)
+      return false unless validate_required_foreman_attr(mac, Nic::Base.physical, :mac)
     end
     true
   end

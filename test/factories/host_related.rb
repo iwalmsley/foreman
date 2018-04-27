@@ -117,7 +117,7 @@ FactoryBot.define do
 
     # This allows a test to declare build/create(:host, :ip => '1.2.3.4') and
     # have the primary interface correctly updated with the specified attrs
-    after(:build) do |host,evaluator|
+    after(:build) do |host, evaluator|
       unless host.primary_interface.present?
         opts = {
           :primary => true,
@@ -151,7 +151,7 @@ FactoryBot.define do
     end
 
     trait :with_parameter do
-      after(:create) do |host,evaluator|
+      after(:create) do |host, evaluator|
         FactoryBot.create(:host_parameter, :host => host)
       end
     end
@@ -160,7 +160,7 @@ FactoryBot.define do
       transient do
         fact_count 20
       end
-      after(:create) do |host,evaluator|
+      after(:create) do |host, evaluator|
         evaluator.fact_count.times do
           FactoryBot.create(:fact_value, :host => host)
         end
@@ -171,7 +171,7 @@ FactoryBot.define do
       transient do
         report_count 5
       end
-      after(:create) do |host,evaluator|
+      after(:create) do |host, evaluator|
         evaluator.report_count.times do |i|
           FactoryBot.create(:report, :host => host, :reported_at => (evaluator.report_count - i).minutes.ago)
         end
@@ -244,7 +244,7 @@ FactoryBot.define do
     trait :with_ipv6 do
       subnet6 do
         overrides = {:dns => FactoryBot.create(:dns_smart_proxy)}
-        #add taxonomy overrides in case it's set in the host object
+        # add taxonomy overrides in case it's set in the host object
         overrides[:locations] = [location] unless location.nil?
         overrides[:organizations] = [organization] unless organization.nil?
 
@@ -263,7 +263,7 @@ FactoryBot.define do
       with_ipv6
       subnet do
         overrides = {:dns => FactoryBot.create(:dns_smart_proxy)}
-        #add taxonomy overrides in case it's set in the host object
+        # add taxonomy overrides in case it's set in the host object
         overrides[:locations] = [location] unless location.nil?
         overrides[:organizations] = [organization] unless organization.nil?
 
@@ -287,7 +287,7 @@ FactoryBot.define do
         overrides = {
           :dhcp => FactoryBot.create(:dhcp_smart_proxy)
         }
-        #add taxonomy overrides in case it's set in the host object
+        # add taxonomy overrides in case it's set in the host object
         overrides[:locations] = [location] unless location.nil?
         overrides[:organizations] = [organization] unless organization.nil?
         FactoryBot.create(
@@ -305,7 +305,7 @@ FactoryBot.define do
       association :compute_resource, :factory => :libvirt_cr
       subnet do
         overrides = {:dns => FactoryBot.create(:dns_smart_proxy)}
-        #add taxonomy overrides in case it's set in the host object
+        # add taxonomy overrides in case it's set in the host object
         overrides[:locations] = [location] unless location.nil?
         overrides[:organizations] = [organization] unless organization.nil?
 
@@ -330,7 +330,7 @@ FactoryBot.define do
       association :compute_resource, :factory => :libvirt_cr
       subnet6 do
         overrides = {:dns => FactoryBot.create(:dns_smart_proxy)}
-        #add taxonomy overrides in case it's set in the host object
+        # add taxonomy overrides in case it's set in the host object
         overrides[:locations] = [location] unless location.nil?
         overrides[:organizations] = [organization] unless organization.nil?
 
@@ -366,6 +366,10 @@ FactoryBot.define do
 
     trait :with_tftp_subnet do
       subnet { FactoryBot.build(:subnet_ipv4, :tftp, locations: [location], organizations: [organization]) }
+    end
+
+    trait :with_templates_subnet do
+      subnet { FactoryBot.build(:subnet_ipv4, :template, locations: [location], organizations: [organization]) }
     end
 
     trait :with_separate_provision_interface do
@@ -469,7 +473,7 @@ FactoryBot.define do
     end
 
     trait :with_parameter do
-      after(:create) do |hg,evaluator|
+      after(:create) do |hg, evaluator|
         FactoryBot.create(:hostgroup_parameter, :hostgroup => hg)
         hg.group_parameters.reload
       end

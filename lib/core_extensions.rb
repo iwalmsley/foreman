@@ -31,10 +31,9 @@ class ActiveRecord::Base
 
   # ActiveRecord Callback class
   class EnsureNotUsedBy
-    attr_reader :klasses, :logger
+    attr_reader :klasses
     def initialize(*attribute)
       @klasses = attribute
-      @logger  = Rails.logger
     end
 
     def before_destroy(record)
@@ -54,7 +53,7 @@ class ActiveRecord::Base
         end
       end
       if record.errors.present?
-        logger.error "You may not destroy #{record.to_label} as it is in use!"
+        Rails.logger.error "You may not destroy #{record.to_label} as it is in use!"
         throw :abort
       end
     end
@@ -144,7 +143,7 @@ class String
     else
       raise "Unknown string: #{self.inspect}!"
     end
-    unit ||= :byte #default to bytes if no unit given
+    unit ||= :byte # default to bytes if no unit given
 
     case unit.downcase.to_sym
     when :b, :byte, :bytes then (value.to_f / 1.gigabyte)

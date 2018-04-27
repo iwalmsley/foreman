@@ -1,6 +1,7 @@
 require "resolv"
 # This models a DNS domain and so represents a site.
 class Domain < ApplicationRecord
+  audited
   include Authorizable
   extend FriendlyId
   friendly_id :name
@@ -10,10 +11,9 @@ class Domain < ApplicationRecord
   include BelongsToProxies
   include ParameterAttributes
 
-  audited
   validates_lengths_from_database
   has_many :hostgroups
-  #order matters! see https://github.com/rails/rails/issues/670
+  # order matters! see https://github.com/rails/rails/issues/670
   before_destroy EnsureNotUsedBy.new(:interfaces, :hostgroups, :subnets)
   has_many :subnet_domains, :dependent => :destroy, :inverse_of => :domain
   has_many :subnets, :through => :subnet_domains
@@ -67,7 +67,7 @@ class Domain < ApplicationRecord
   end
 
   def proxy
-    ProxyAPI::DNS.new(:url => dns.url) if dns && !dns.url.blank?
+    ProxyAPI::DNS.new(:url => dns.url) if dns && dns.url.present?
   end
 
   def lookup(query)

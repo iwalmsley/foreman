@@ -2,6 +2,7 @@ require 'ostruct'
 require 'uri'
 
 class Operatingsystem < ApplicationRecord
+  audited
   include Authorizable
   include ValidateOsFamily
   include PxeLoaderSupport
@@ -40,7 +41,6 @@ class Operatingsystem < ApplicationRecord
 
   before_save :set_family
 
-  audited
   default_scope -> { order(:title) }
 
   scoped_search :on => :name,        :complete_value => :true
@@ -62,6 +62,7 @@ class Operatingsystem < ApplicationRecord
                'Altlinux'  => %r{Altlinux}i,
                'Archlinux' => %r{Archlinux}i,
                'Coreos'    => %r{CoreOS}i,
+               'Rancheros' => %r{RancherOS}i,
                'Gentoo'    => %r{Gentoo}i,
                'Solaris'   => %r{Solaris}i,
                'Freebsd'   => %r{FreeBSD}i,
@@ -71,7 +72,11 @@ class Operatingsystem < ApplicationRecord
                'Xenserver' => %r{XenServer}i }
 
   class Jail < Safemode::Jail
-    allow :name, :media_url, :major, :minor, :family, :to_s, :repos, :==, :release_name, :kernel, :initrd, :pxe_type, :medium_uri, :boot_files_uri, :password_hash
+    allow :name, :media_url, :major, :minor, :family, :to_s, :repos, :==, :release, :release_name, :kernel, :initrd, :pxe_type, :medium_uri, :boot_files_uri, :password_hash
+  end
+
+  def self.title_name
+    "title".freeze
   end
 
   def self.inherited(child)
@@ -92,7 +97,7 @@ class Operatingsystem < ApplicationRecord
   # family are the same thing then rails converts the record to a Debian or a solaris object as required.
   # Manually managing the 'type' field allows us to control the inheritance chain and the available methods
   def family
-    read_attribute(:type)
+    self[:type]
   end
 
   def family=(value)
@@ -139,7 +144,7 @@ class Operatingsystem < ApplicationRecord
          gsub('$major',  os.major).
          gsub('$minor',  os.minor).
          gsub('$version', os.minor.blank? ? os.major : [os.major, os.minor].compact.join('.')).
-         gsub('$release', os.release_name.blank? ? '' : os.release_name)
+         gsub('$release', os.release_name.presence || '')
   end
 
   # The OS is usually represented as the concatenation of the OS and the revision
@@ -158,7 +163,7 @@ class Operatingsystem < ApplicationRecord
   end
 
   def release
-    "#{major}#{('.' + minor.to_s) unless minor.blank?}"
+    "#{major}#{('.' + minor.to_s) if minor.present?}"
   end
 
   def fullname
@@ -177,7 +182,7 @@ class Operatingsystem < ApplicationRecord
     cond = {:name => a[0]}
     cond[:major] = b[0] if b && b[0]
     cond[:minor] = b[1] if b && b[1]
-    self.where(cond).first
+    self.find_by(cond)
   end
 
   # Implemented only in the OSs subclasses where it makes sense
@@ -187,7 +192,7 @@ class Operatingsystem < ApplicationRecord
 
   # sets the prefix for the tfp files based on the os / arch combination
   def pxe_prefix(arch)
-    "boot/#{self}-#{arch}".tr(" ","-")
+    "boot/#{self}-#{arch}".tr(" ", "-")
   end
 
   def pxe_files(medium, arch, host = nil)
@@ -197,11 +202,11 @@ class Operatingsystem < ApplicationRecord
   end
 
   def kernel(arch)
-    bootfile(arch,:kernel)
+    bootfile(arch, :kernel)
   end
 
   def initrd(arch)
-    bootfile(arch,:initrd)
+    bootfile(arch, :initrd)
   end
 
   def bootfile(arch, type)

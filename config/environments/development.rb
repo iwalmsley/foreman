@@ -31,7 +31,7 @@ Foreman::Application.configure do
   # Debug mode disables concatenation and preprocessing of assets.
   # This option may cause significant delays in view rendering with a large
   # number of complex assets.
-  config.assets.debug = true
+  config.assets.debug = SETTINGS.fetch(:assets_debug, true)
 
   # Adds additional error checking when serving assets at runtime.
   # Checks for improperly declared sprockets dependencies.
@@ -52,7 +52,7 @@ Foreman::Application.configure do
     Bullet.add_whitelist :type => :n_plus_one_query, :class_name => "Puppetclass", :association => :class_params
   end if defined?(Bullet)
 
-  #Allow disabling the webpack dev server from the settings
+  # Allow disabling the webpack dev server from the settings
   config.webpack.dev_server.enabled = SETTINGS.fetch(:webpack_dev_server, true)
   config.webpack.dev_server.https = SETTINGS.fetch(:webpack_dev_server_https, false)
 end

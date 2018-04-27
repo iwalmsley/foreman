@@ -30,7 +30,7 @@ module LookupKeysHelper
   end
 
   def param_type_selector(f, options = {})
-    selectable_f f, :key_type, options_for_select(LookupKey::KEY_TYPES.map { |e| [_(e),e] }, f.object.key_type),{},
+    selectable_f f, :key_type, options_for_select(LookupKey::KEY_TYPES.map { |e| [_(e), e] }, f.object.key_type), {},
                  options.merge({ :disabled => (f.object.puppet? && !f.object.override), :size => "col-md-8", :class=> "without_select2",
                  :label_help => _("<dl>" +
                    "<dt>String</dt> <dd>Everything is taken as a string.</dd>" +
@@ -46,7 +46,7 @@ module LookupKeysHelper
   end
 
   def validator_type_selector(f)
-    selectable_f f, :validator_type, options_for_select(LookupKey::VALIDATOR_TYPES.map { |e| [_(e),e] }, f.object.validator_type),{:include_blank => _("None")},
+    selectable_f f, :validator_type, options_for_select(LookupKey::VALIDATOR_TYPES.map { |e| [_(e), e] }, f.object.validator_type), {:include_blank => _("None")},
                { :disabled => (f.object.puppet? && !f.object.override), :size => "col-md-8", :class=> "without_select2",
                  :onchange => 'validatorTypeSelected(this)',
                  :label_help => _("<dl>" +
@@ -92,7 +92,7 @@ module LookupKeysHelper
       else
         [lookup_key.default_value, _("Default value")]
       end
-    else #hostgroup
+    else # hostgroup
       obj.inherited_lookup_value(lookup_key)
     end
   end

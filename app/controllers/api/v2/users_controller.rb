@@ -15,6 +15,7 @@ module Api
 
       api :GET, "/users/", N_("List all users")
       api :GET, "/auth_source_ldaps/:auth_source_ldap_id/users", N_("List all users for LDAP authentication source")
+      api :GET, "/auth_source_externals/:auth_source_external_id/users", N_("List all users for external authentication source")
       api :GET, "/usergroups/:usergroup_id/users", N_("List all users for user group")
       api :GET, "/roles/:role_id/users", N_("List all users for role")
       api :GET, "/locations/:location_id/users", N_("List all users for location")
@@ -90,7 +91,7 @@ module Api
       param_group :user_update
 
       def update
-        if @user.update_attributes(user_params)
+        if @user.update(user_params)
           update_sub_hostgroups_owners
 
           process_success

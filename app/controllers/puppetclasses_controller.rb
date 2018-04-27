@@ -17,7 +17,7 @@ class PuppetclassesController < ApplicationController
   end
 
   def update
-    if @puppetclass.update_attributes(puppetclass_params)
+    if @puppetclass.update(puppetclass_params)
       process_success
     else
       process_error
@@ -38,9 +38,9 @@ class PuppetclassesController < ApplicationController
         class_param.update_attribute(:override, params[:enable])
       end
       if [true, :true, 'true'].include?(params[:enable])
-        notice _("Successfully overridden all parameters of Puppet class %s") % @puppetclass.name
+        success _("Successfully overridden all parameters of Puppet class %s") % @puppetclass.name
       else
-        notice _("Successfully reset all parameters of Puppet class %s to their default values") % @puppetclass.name
+        success _("Successfully reset all parameters of Puppet class %s to their default values") % @puppetclass.name
       end
     else
       error _("No parameters to override for Puppet class %s") % @puppetclass.name
@@ -60,12 +60,13 @@ class PuppetclassesController < ApplicationController
 
   def get_host_or_hostgroup
     # params['host_id'] = 'undefined' if NEW since hosts/form and hostgroups/form has no data-id
-    if params['host_id'] == 'undefined'
+    host_id = params.delete(:host_id)
+    if host_id == 'undefined'
       @obj = Host::Managed.new(host_params('host')) if params['host']
-      @obj ||= Hostgroup.new(hostgroup_params) if params['hostgroup']
+      @obj ||= Hostgroup.new(hostgroup_params('hostgroup')) if params['hostgroup']
     else
       if params['host']
-        @obj = Host::Base.find(params['host_id'])
+        @obj = Host::Base.find(host_id)
         unless @obj.is_a?(Host::Managed)
           @obj      = @obj.becomes(Host::Managed)
           @obj.type = "Host::Managed"
@@ -74,8 +75,8 @@ class PuppetclassesController < ApplicationController
         @obj.attributes = host_params('host').except(:puppetclass_ids, :config_group_ids)
       elsif params['hostgroup']
         # hostgroup.id is assigned to params['host_id'] by host_edit.js#load_puppet_class_parameters
-        @obj = Hostgroup.find(params['host_id'])
-        @obj.attributes = hostgroup_params.except(:puppetclass_ids, :config_group_ids)
+        @obj = Hostgroup.find(host_id)
+        @obj.attributes = hostgroup_params('hostgroup').except(:puppetclass_ids, :config_group_ids)
       end
     end
     @obj

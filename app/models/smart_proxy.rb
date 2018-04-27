@@ -1,14 +1,14 @@
 class SmartProxy < ApplicationRecord
+  audited
   include Authorizable
   extend FriendlyId
   friendly_id :name
   include Taxonomix
   include Parameterizable::ByIdName
-  audited
 
   validates_lengths_from_database
   before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups, :subnets, :domains, [:puppet_ca_hosts, :hosts], [:puppet_ca_hostgroups, :hostgroups], :realms)
-  #TODO check if there is a way to look into the tftp_id too
+  # TODO check if there is a way to look into the tftp_id too
   # maybe with a predefined sql
   has_and_belongs_to_many :features
   has_many :subnets,                                          :foreign_key => 'dhcp_id'
@@ -46,21 +46,6 @@ class SmartProxy < ApplicationRecord
   def to_s
     return hostname unless Setting[:legacy_puppet_hostname]
     (hostname =~ /^puppet\./) ? 'puppet' : hostname
-  end
-
-  def self.smart_proxy_ids_for(hosts)
-    ids = []
-    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.dhcp_id')
-    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.tftp_id')
-    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.dns_id')
-    ids << hosts.joins(:primary_interface => :domain).pluck('DISTINCT domains.dns_id')
-    ids << hosts.joins(:realm).pluck('DISTINCT realm_proxy_id')
-    ids << hosts.pluck('DISTINCT puppet_proxy_id')
-    ids << hosts.pluck('DISTINCT puppet_ca_proxy_id')
-    ids << hosts.joins(:hostgroup).pluck('DISTINCT hostgroups.puppet_proxy_id')
-    ids << hosts.joins(:hostgroup).pluck('DISTINCT hostgroups.puppet_ca_proxy_id')
-    # returned both 7, "7". need to convert to integer or there are duplicates
-    ids.flatten.compact.map { |i| i.to_i }.uniq
   end
 
   def hosts_count

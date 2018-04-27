@@ -39,9 +39,14 @@ module Foreman
     def filter_params(params, context, top_level_hash = nil)
       top_level_hash ||= context.controller_name.singularize
       if top_level_hash == :none
-        params.permit(*filter(context))
+        params.permit(*filter(context)).to_h
       else
-        permitted = params.permit(top_level_hash => filter(context))
+        if context.api? # allow both wrapped and unwrapped
+          allow = [*filter(context), top_level_hash => filter(context)]
+        else
+          allow = {top_level_hash => filter(context)}
+        end
+        permitted = params.permit(allow)
         permitted.to_h.fetch(top_level_hash, {})
       end
     end

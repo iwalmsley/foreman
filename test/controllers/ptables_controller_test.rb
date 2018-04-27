@@ -109,14 +109,14 @@ class PtablesControllerTest < ActionController::TestCase
     setup_edit_user
     delete :destroy, params: { :id => @ptable.id }, session: set_session_user.merge(:user => users(:one).id)
     assert_redirected_to ptables_url
-    assert_equal "Successfully deleted #{@ptable.name}.", flash[:notice]
+    assert_equal "Successfully deleted #{@ptable.name}.", flash[:success]
   end
 
   test 'user with editing rights should succeed in creating a partition table' do
     setup_edit_user
     post :create, params: { :ptable => {:name => "dummy", :layout => "dummy"} }, session: set_session_user.merge(:user => users(:one).id)
     assert_redirected_to ptables_url
-    assert_equal "Successfully created dummy.", flash[:notice]
+    assert_equal "Successfully created dummy.", flash[:success]
   end
 
   test 'preview' do
@@ -125,7 +125,7 @@ class PtablesControllerTest < ActionController::TestCase
 
     # works for given host
     post :preview, params: { :preview_host_id => host.id, :template => '<%= @host.name -%>', :id => template }, session: set_session_user
-    assert_equal (host.hostname).to_s, @response.body
+    assert_equal host.hostname.to_s, @response.body
 
     # without host specified it uses first one
     post :preview, params: { :template => '<%= 1+1 -%>', :id => template }, session: set_session_user

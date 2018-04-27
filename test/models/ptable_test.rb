@@ -6,9 +6,13 @@ class PtableTest < ActiveSupport::TestCase
   end
 
   should validate_presence_of(:name)
-  should_not allow_value('  ').for(:name)
   should validate_uniqueness_of(:name)
+  should allow_values(*valid_name_list).for(:name)
+  should_not allow_values(*invalid_name_list).for(:name)
+
   should validate_presence_of(:layout)
+  should allow_values(*valid_name_list).for(:layout)
+  should_not allow_values('', ' ', nil).for(:layout)
 
   test "name strips leading and trailing white spaces" do
     partition_table = Ptable.new :name => "   Archlinux        default  ", :layout => "any layout"
@@ -84,5 +88,19 @@ class PtableTest < ActiveSupport::TestCase
     lines = ptable.metadata.split("\n")
     assert_includes lines, "os_family: #{ptable.os_family}"
     assert_includes lines, "name: #{ptable.name}"
+  end
+
+  context 'importing' do
+    describe '#import_custom_data' do
+      test 'it sets the family based on assigned oses' do
+        template = Ptable.new
+        os1 = FactoryBot.create(:debian7_0)
+        os2 = FactoryBot.create(:suse)
+        template.operatingsystem_ids = [os1.id, os2.id]
+        template.stubs :import_oses => true
+        template.send(:import_custom_data, {})
+        assert_equal 'Debian', template.os_family
+      end
+    end
   end
 end

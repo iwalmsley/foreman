@@ -1,5 +1,15 @@
-<% title "#{@audit.action.camelize} #{audited_type @audit}: #{audit_title @audit}" %>
-
+<% breadcrumbs(
+     switchable: false,
+     items: [
+       {
+         caption: _("Audits"),
+         url: (url_for(audits_path) if authorized_for(hash_for_hosts_path))
+       },
+       {
+         caption: "#{@audit.action.camelize} #{audited_type @audit}: #{audit_title @audit}"
+       },
+     ]
+) %>
 <%= title_actions link_to_if_authorized(_("Host details"),
                                         hash_for_host_path(:id => @audit.auditable.to_param).merge(:auth_object => @audit.auditable, :auth_action => 'view'),
                                         :title => _("Host details"),
@@ -8,7 +18,6 @@
                                         hash_for_host_path(:id => @audit.associated.to_param).merge(:auth_object => @audit.associated, :auth_action => 'view'),
                                         :title => _("Host details"),
                                         :class => 'btn btn-default') if @audit.auditable_type.match(/^Nic/) && @audit.associated_type == 'Host::Base' && @audit.associated %>
-<%= title_actions link_to 'Back', :back, :class=>'btn btn-default' %>
 <% tmplt = audit_template?(@audit) %>
 
 <div class="tabbable">
@@ -26,6 +35,31 @@
     </div>
     <% end %>
     <div class='tab-pane <%= "active" unless tmplt%>' id="tab1">
+      <div class="row">
+        <h3 class="col-md-12"><%= _("Audit Metadata:") %></h3>
+      </div>
+      <div class="row">
+        <strong class="col-md-2"><%= _("Audit Time:")%></strong>
+        <div class="col-md-10"><%= audit_time(@audit) %></div>
+      </div>
+      <div class="row">
+        <strong class="col-md-2"><%= _("User Name:")%></strong>
+        <div class="col-md-10"><%= audit_user(@audit) %></div>
+      </div>
+      <% if Taxonomy.organizations_enabled %>
+        <div class="row">
+          <strong class="col-md-2"><%= _("Affected Organizations:")%></strong>
+          <div class="col-md-10"><%= audit_affected_organizations(@audit) %></div>
+        </div>
+      <% end %>
+      <% if Taxonomy.locations_enabled %>
+        <div class="row">
+          <strong class="col-md-2"><%= _("Affected Locations:")%></strong>
+          <div class="col-md-10"><%= audit_affected_locations(@audit) %></div>
+        </div>
+      <% end %>
+      <hr/>
+      <h3><%= _("Changes:") %></h3>
       <table class="<%= table_css_classes %>">
         <% if @audit.audited_changes.key?("template") && @audit.audited_changes.size == 1 %>
           <%= alert :class => 'alert-info', :header => _('There are no changes'), :text => _(' in the provisioning template.') %>

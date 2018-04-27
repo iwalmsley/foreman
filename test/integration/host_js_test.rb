@@ -12,7 +12,6 @@ class HostJSTest < IntegrationTestWithJavascript
   #   HostJSTest::NIC modal window::adding interfaces.test_0005_selecting domain updates puppetclass parameters
   #   HostJSTest::NIC modal window::adding interfaces.test_0004_selecting domain updates subnet list
   #   HostJSTest::NIC modal window::adding interfaces.test_0001_click on add opens modal
-  extend Minitest::OptionalRetry
 
   include HostFinders
   include HostOrchestrationStubs
@@ -205,13 +204,13 @@ class HostJSTest < IntegrationTestWithJavascript
       fill_in 'host_interfaces_attributes_0_mac', :with => '00:11:11:11:11:11'
       wait_for_ajax
       fill_in 'host_interfaces_attributes_0_ip', :with => '1.1.1.1'
-      click_button 'Ok' #close interfaces
-      #wait for the dialog to close
+      click_button 'Ok' # close interfaces
+      # wait for the dialog to close
       Timeout.timeout(Capybara.default_max_wait_time) do
         loop while find(:css, '#interfaceModal', :visible => false).visible?
       end
       click_on_submit
-      find('#host-show') #wait for host details page
+      find('#host-show') # wait for host details page
 
       host = Host::Managed.search_for('name ~ "myhost1"').first
       assert_equal env.name, host.environment.name
@@ -251,7 +250,7 @@ class HostJSTest < IntegrationTestWithJavascript
       wait_for_ajax
       click_button 'Ok'
 
-      #wait for the dialog to close
+      # wait for the dialog to close
       Timeout.timeout(Capybara.default_max_wait_time) do
         loop while find(:css, '#interfaceModal', :visible => false).visible?
       end
@@ -357,6 +356,43 @@ class HostJSTest < IntegrationTestWithJavascript
 
       host.reload
       assert_equal env1.name, host.environment.name
+    end
+
+    test 'user without edit_params permission can save host with params' do
+      host = FactoryBot.create(:host, :with_puppetclass)
+      FactoryBot.create(:puppetclass_lookup_key, :as_smart_class_param,
+                         :with_override, :key_type => 'string',
+                         :default_value => 'string1', :path => "fqdn\ncomment",
+                         :puppetclass => host.puppetclasses.first,
+                         :overrides => { host.lookup_value_matcher => 'string2' })
+      user = FactoryBot.create(:user, :with_mail)
+      user.update_attribute(:roles, roles(:viewer, :edit_hosts))
+      refute user.can? 'edit_params'
+      set_request_user(user)
+      visit edit_host_path(host)
+      assert page.has_link?('Parameters', :href => '#params')
+      click_link 'Parameters'
+      assert class_params.find('textarea').disabled?
+      assert_equal 2, class_params.all('input:disabled', :visible => :all).count
+      assert_equal 0, class_params.all('input\:not[disabled]', :visible => :all).count
+      click_button('Submit')
+      assert page.has_link?('Edit')
+    end
+
+    test 'shows errors on invalid lookup values' do
+      host = FactoryBot.create(:host, :with_puppetclass)
+      lookup_key = FactoryBot.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override,
+                                      :key_type => 'real', :default_value => true, :path => "fqdn\ncomment",
+                                      :puppetclass => host.puppetclasses.first, :overrides => {host.lookup_value_matcher => false})
+
+      visit edit_host_path(host)
+      assert page.has_link?('Parameters', :href => '#params')
+      click_link 'Parameters'
+      assert page.has_no_selector?('#params td.has-error')
+
+      fill_in "host_lookup_values_attributes_#{lookup_key.id}_value", :with => 'invalid'
+      click_button('Submit')
+      assert page.has_selector?('#params td.has-error')
     end
 
     test 'choosing a hostgroup does not override other host attributes' do
@@ -514,7 +550,7 @@ class HostJSTest < IntegrationTestWithJavascript
         assert table.find('td.fqdn').has_content?('name.'+domain.name)
         assert page.find('#hostFQDN').has_content?('| name.'+domain.name)
 
-        page.find(:link, "Host").click
+        click_link('host_tab')
         assert_equal 'name', page.find('#host_name', :visible => false).value
       end
 

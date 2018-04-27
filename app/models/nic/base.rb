@@ -2,6 +2,7 @@
 # This class is the both parent
 module Nic
   class Base < ApplicationRecord
+    audited associated_with: :host
     prepend Foreman::STI
     include Encryptable
     encrypts :password
@@ -35,6 +36,7 @@ module Nic
     validates :ip6, :presence => true, :if => Proc.new { |nic| nic.host_managed? && nic.require_ip6_validation? }
 
     validate :validate_subnet_types
+    validates_with SubnetsConsistencyValidator
     validate :validate_updating_types
 
     # Validate that subnet's taxonomies are defined for nic's host
@@ -62,8 +64,6 @@ module Nic
 
     belongs_to_host :inverse_of => :interfaces, :class_name => "Host::Base"
 
-    audited associated_with: :host
-
     # keep extra attributes needed for sub classes.
     serialize :attrs, Hash
 
@@ -72,7 +72,7 @@ module Nic
 
     class Jail < ::Safemode::Jail
       allow :managed?, :subnet, :subnet6, :virtual?, :physical?, :mac, :ip, :ip6, :identifier, :attached_to,
-            :link, :tag, :domain, :vlanid, :bond_options, :attached_devices, :mode,
+            :link, :tag, :domain, :vlanid, :mtu, :bond_options, :attached_devices, :mode,
             :attached_devices_identifiers, :primary, :provision, :alias?, :inheriting_mac,
             :children_mac_addresses, :fqdn, :shortname
     end
@@ -137,11 +137,7 @@ module Nic
     # if this interface does not have MAC and is attached to other interface,
     # we can fetch mac from this other interface
     def inheriting_mac
-      if self.mac.blank?
-        self.host.interfaces.detect { |i| i.identifier == self.attached_to }.try(:mac)
-      else
-        self.mac
-      end
+      self.mac.presence || self.host.interfaces.detect { |i| i.identifier == self.attached_to }.try(:mac)
     end
 
     # if this interface has attached devices (e.g. in a bond),
@@ -154,7 +150,7 @@ module Nic
     # in which case host managed? flag can be true but we should consider
     # everything as unmanaged
     def host_managed?
-      self.host && self.host.managed? && SETTINGS[:unattended]
+      self.host&.managed? && SETTINGS[:unattended]
     end
 
     def require_ip4_validation?(from_compute = true)
@@ -230,7 +226,7 @@ module Nic
     end
 
     def not_required_interface
-      if host && host.managed? && !host.being_destroyed?
+      if host&.managed? && !host.being_destroyed?
         if self.primary?
           self.errors.add :primary, _("can't delete primary interface of managed host")
         end

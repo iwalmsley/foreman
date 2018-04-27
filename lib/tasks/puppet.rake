@@ -36,7 +36,7 @@ namespace :puppet do
         name = yaml.match(/.*\/(.*).yaml/)[1]
         puts "Importing #{name}"
         puppet_facts = File.read(yaml)
-        facts_stripped_of_class_names = YAML.load(puppet_facts.gsub(/\!ruby\/object.*$/,''))
+        facts_stripped_of_class_names = YAML.load(puppet_facts.gsub(/\!ruby\/object.*$/, ''))
         User.as_anonymous_admin do
           host = Host::Managed.import_host(facts_stripped_of_class_names['name'], 'puppet')
           host.import_facts(facts_stripped_of_class_names['values'].with_indifferent_access)
@@ -117,18 +117,18 @@ namespace :puppet do
           rescue => e
             errors = e.message + "\n" + e.backtrace.join("\n")
           end
-          unless args.batch
-            unless errors.empty?
+          if args.batch
+            Rails.logger.warn "Failed to refresh puppet classes: #{errors}"
+          else
+            if errors.empty?
+              puts "Import complete"
+            else
               puts "Problems were detected during the execution phase"
               puts
               puts errors.each { |error| error.gsub(/<br\/>/, "\n") } << "\n"
               puts
               puts "Import failed"
-            else
-              puts "Import complete"
             end
-          else
-            Rails.logger.warn "Failed to refresh puppet classes: #{errors}"
           end
         end
       end

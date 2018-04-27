@@ -59,8 +59,8 @@ require_dependency File.expand_path('../../lib/core_extensions', __FILE__)
 require_dependency File.expand_path('../../lib/foreman/logging', __FILE__)
 require_dependency File.expand_path('../../lib/foreman/http_proxy', __FILE__)
 require_dependency File.expand_path('../../lib/middleware/catch_json_parse_errors', __FILE__)
-require_dependency File.expand_path('../../lib/middleware/tagged_logging', __FILE__)
-require_dependency File.expand_path('../../lib/middleware/session_safe_logging', __FILE__)
+require_dependency File.expand_path('../../lib/middleware/logging_context', __FILE__)
+require_dependency File.expand_path('../../lib/middleware/telemetry', __FILE__)
 
 if SETTINGS[:support_jsonp]
   if File.exist?(File.expand_path('../../Gemfile.in', __FILE__))
@@ -85,7 +85,7 @@ module Foreman
     # config.autoload_paths += %W(#{config.root}/extras)
     config.autoload_paths += Dir["#{config.root}/lib"]
     config.autoload_paths += Dir["#{config.root}/app/controllers/concerns"]
-    config.autoload_paths += Dir[ Rails.root.join('app', 'models', 'power_manager') ]
+    config.autoload_paths += Dir[Rails.root.join('app', 'models', 'power_manager')]
     config.autoload_paths += Dir["#{config.root}/app/models/concerns"]
     config.autoload_paths += Dir["#{config.root}/app/services"]
     config.autoload_paths += Dir["#{config.root}/app/mailers"]
@@ -136,13 +136,20 @@ module Foreman
     # Enable escaping HTML in JSON.
     config.active_support.escape_html_entities_in_json = true
 
+    # Don't raise exception for common parameters
+    config.action_controller.always_permitted_parameters = %w(
+      controller action format locale utf8 _method authenticity_token commit redirect
+      page per_page paginate search order sort sort_by sort_order
+      _ _ie_support fakepassword apiv id organization_id location_id user_id
+    )
+
     # Use SQL instead of Active Record's schema dumper when creating the database.
     # This is necessary if your schema can't be completely dumped by the schema dumper,
     # like if you have constraints or database-specific column types
     # config.active_record.schema_format = :sql
 
     # enables in memory cache store with ttl
-    #config.cache_store = TimedCachedStore.new
+    # config.cache_store = TimedCachedStore.new
     config.cache_store = :file_store, Rails.root.join("tmp", "cache")
 
     # enables JSONP support in the Rack middleware
@@ -158,6 +165,15 @@ module Foreman
       nil
     end
 
+    if SETTINGS[:telemetry].try(:fetch, :prometheus).try(:fetch, :enabled)
+      begin
+        require 'prometheus/middleware/exporter'
+        config.middleware.use Prometheus::Middleware::Exporter
+      rescue LoadError
+        # bundler group 'telemetry' was disabled
+      end
+    end
+
     # Enable the asset pipeline
     config.assets.enabled = true
 
@@ -170,12 +186,14 @@ module Foreman
     # Catching Invalid JSON Parse Errors with Rack Middleware
     config.middleware.use Middleware::CatchJsonParseErrors
 
-    # Record request ID in logging MDC storage
-    config.middleware.insert_before Rails::Rack::Logger, Middleware::TaggedLogging
-    config.middleware.insert_after ActionDispatch::Session::ActiveRecordStore, Middleware::SessionSafeLogging
+    # Record request and session tokens in logging MDC
+    config.middleware.insert_after ActionDispatch::Session::ActiveRecordStore, Middleware::LoggingContext
 
     # Add apidoc hash in headers for smarter caching
     config.middleware.use Apipie::Middleware::ChecksumInHeaders
+
+    # Add telemetry
+    config.middleware.use Middleware::Telemetry
 
     # New config option to opt out of params "deep munging" that was used to address security vulnerability CVE-2013-0155.
     config.action_dispatch.perform_deep_munge = false
@@ -200,7 +218,9 @@ module Foreman
       :templates => {:enabled => true},
       :notifications => {:enabled => true},
       :background => {:enabled => true},
-      :dynflow => {:enabled => true}
+      :dynflow => {:enabled => true},
+      :telemetry => {:enabled => false},
+      :blob => {:enabled => true}
     ))
 
     config.logger = Foreman::Logging.logger('app')
@@ -234,18 +254,6 @@ module Foreman
     # Use the database for sessions instead of the cookie-based default
     config.session_store :active_record_store, :secure => !!SETTINGS[:require_ssl]
 
-    def dynflow
-      return @dynflow if @dynflow.present?
-      @dynflow =
-        if defined?(ForemanTasks)
-          ForemanTasks.dynflow
-        else
-          ::Dynflow::Rails.new(nil, ::Foreman::Dynflow::Configuration.new)
-        end
-      @dynflow.require!
-      @dynflow
-    end
-
     # We need to mount the sprockets engine before we use the routes_reloader
     initializer(:mount_sprocket_env, :before => :sooner_routes_load) do
       if config.assets.compile
@@ -268,9 +276,24 @@ module Foreman
     end
 
     config.after_initialize do
-      dynflow = Rails.application.dynflow
+      init_dynflow unless Foreman.in_rake?('db:drop')
+      setup_auditing
+    end
+
+    def dynflow
+      return @dynflow if @dynflow.present?
+      @dynflow =
+        if defined?(ForemanTasks)
+          ForemanTasks.dynflow
+        else
+          ::Dynflow::Rails.new(nil, ::Foreman::Dynflow::Configuration.new)
+        end
+      @dynflow.require!
+      @dynflow
+    end
+
+    def init_dynflow
       dynflow.eager_load_actions!
-      dynflow.config.increase_db_pool_size
 
       unless dynflow.config.lazy_initialization
         if defined?(PhusionPassenger)
@@ -281,6 +304,10 @@ module Foreman
           dynflow.initialize!
         end
       end
+    end
+
+    def setup_auditing
+      Audit.send(:include, AuditSearch)
     end
   end
 

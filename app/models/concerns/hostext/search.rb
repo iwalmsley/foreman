@@ -5,9 +5,11 @@ module Hostext
     included do
       include ScopedSearchExtensions
       include ConfigurationStatusScopedSearch
+      include SmartProxyHostExtensions
 
       has_many :search_parameters, :class_name => 'Parameter', :foreign_key => :reference_id
       belongs_to :search_users, :class_name => 'User', :foreign_key => :owner_id
+      belongs_to :usergroups, :class_name => 'Usergroup', :foreign_key => :owner_id
 
       scoped_search :on => :name,          :complete_value => true, :default_order => true
       scoped_search :on => :last_report,   :complete_value => true, :only_explicit => true
@@ -16,6 +18,8 @@ module Hostext
       scoped_search :on => :managed,       :complete_value => {:true => true, :false => false}
       scoped_search :on => :owner_type,    :complete_value => true, :only_explicit => true
       scoped_search :on => :owner_id,      :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
+
+      scoped_search :relation => :last_report_object, :on => :origin
 
       scoped_search :relation => :configuration_status_object, :on => :status, :offset => 0, :word_size => ConfigReport::BIT_NUM*4, :rename => :'status.interesting', :complete_value => {:true => true, :false => false}, :only_explicit => true
       scoped_search_status "applied",         :relation => :configuration_status_object, :on => :status, :rename => :'status.applied'
@@ -87,9 +91,10 @@ module Hostext
 
       if SETTINGS[:login]
         scoped_search :relation => :search_users, :on => :login,     :complete_value => true, :only_explicit => true, :rename => :'user.login',    :operators => ['= ', '~ '], :ext_method => :search_by_user, :aliases => [:owner]
-        scoped_search :relation => :search_users, :on => :firstname, :complete_value => true, :only_explicit => true, :rename => :'user.firstname',:operators => ['= ', '~ '], :ext_method => :search_by_user
+        scoped_search :relation => :search_users, :on => :firstname, :complete_value => true, :only_explicit => true, :rename => :'user.firstname', :operators => ['= ', '~ '], :ext_method => :search_by_user
         scoped_search :relation => :search_users, :on => :lastname,  :complete_value => true, :only_explicit => true, :rename => :'user.lastname', :operators => ['= ', '~ '], :ext_method => :search_by_user
         scoped_search :relation => :search_users, :on => :mail,      :complete_value => true, :only_explicit => true, :rename => :'user.mail',     :operators => ['= ', '~ '], :ext_method => :search_by_user
+        scoped_search :relation => :usergroups,   :on => :name,      :complete_value => true, :only_explicit => true, :rename => :'usergroup.name', :aliases => [:usergroup]
       end
 
       cattr_accessor :fact_values_table_counter
@@ -97,7 +102,7 @@ module Hostext
 
     module ClassMethods
       def search_by_user(key, operator, value)
-        clean_key = key.sub(/^.*\./,'')
+        clean_key = key.sub(/^.*\./, '')
         if value == "current_user"
           value = User.current.id
           clean_key = "id"
@@ -123,9 +128,9 @@ module Hostext
         hostgroup_ids    = hostgroups.map(&:subtree_ids).flatten.uniq
 
         opts  = ''
-        opts += "hosts.id IN(#{host_ids.join(',')})"            unless host_ids.blank?
+        opts += "hosts.id IN(#{host_ids.join(',')})"            if host_ids.present?
         opts += " OR "                                          unless host_ids.blank? || hostgroup_ids.blank?
-        opts += "hostgroups.id IN(#{hostgroup_ids.join(',')})"  unless hostgroup_ids.blank?
+        opts += "hostgroups.id IN(#{hostgroup_ids.join(',')})"  if hostgroup_ids.present?
         opts  = "hosts.id < 0"                                  if host_ids.blank? && hostgroup_ids.blank?
         {:conditions => opts, :include => :hostgroup}
       end
@@ -133,9 +138,9 @@ module Hostext
       def search_by_hostgroup_and_descendants(key, operator, value)
         conditions = sanitize_sql_for_conditions(["hostgroups.title #{operator} ?", value_to_sql(operator, value)])
         # Only one hostgroup (first) is used to determined descendants. Future TODO - alert if result results more than one hostgroup
-        hostgroup     = Hostgroup.unscoped.with_taxonomy_scope.where(conditions).first
-        hostgroup_ids = hostgroup.subtree_ids
-        if hostgroup_ids.any?
+        hostgroup     = Hostgroup.unscoped.with_taxonomy_scope.find_by(conditions)
+        if hostgroup.present?
+          hostgroup_ids = hostgroup.subtree_ids
           opts = "hosts.hostgroup_id IN (#{hostgroup_ids.join(',')})"
         else
           opts = "hosts.id < 0"
@@ -144,20 +149,20 @@ module Hostext
       end
 
       def search_by_params(key, operator, value)
-        key_name = key.sub(/^.*\./,'')
+        key_name = key.sub(/^.*\./, '')
         condition = sanitize_sql_for_conditions(["name = ? and value #{operator} ?", key_name, value_to_sql(operator, value)])
         p = Parameter.where(condition).reorder(:priority)
         return {:conditions => '1 = 0'} if p.blank?
 
         max         = p.first.priority
-        condition   = sanitize_sql_for_conditions(["name = ? and NOT(value #{operator} ?) and priority > ?",key_name,value_to_sql(operator, value), max])
+        condition   = sanitize_sql_for_conditions(["name = ? and NOT(value #{operator} ?) and priority > ?", key_name, value_to_sql(operator, value), max])
         n           = Parameter.where(condition).reorder(:priority)
 
         conditions = param_conditions(p)
         negate = param_conditions(n)
 
         conditions += " AND " unless conditions.blank? || negate.blank?
-        conditions += " NOT(#{negate})" unless negate.blank?
+        conditions += " NOT(#{negate})" if negate.present?
         {
           :joins =>  :primary_interface,
           :conditions => conditions
@@ -170,9 +175,9 @@ module Hostext
         hostgroup_ids = Hostgroup.unscoped.with_taxonomy_scope.where(conditions).joins(:config_groups).distinct.map(&:subtree_ids).flatten.uniq
 
         opts = ''
-        opts += "hosts.id IN(#{host_ids.join(',')})" unless host_ids.blank?
+        opts += "hosts.id IN(#{host_ids.join(',')})" if host_ids.present?
         opts += " OR " unless host_ids.blank? || hostgroup_ids.blank?
-        opts += "hostgroup_id IN(#{hostgroup_ids.join(',')})" unless hostgroup_ids.blank?
+        opts += "hostgroup_id IN(#{hostgroup_ids.join(',')})" if hostgroup_ids.present?
         opts = "hosts.id < 0" if host_ids.blank? && hostgroup_ids.blank?
         {:conditions => opts}
       end
@@ -181,8 +186,8 @@ module Hostext
         proxy_cond = sanitize_sql_for_conditions(["smart_proxies.name #{operator} ?", value_to_sql(operator, value)])
         host_ids = Host::Managed.reorder('')
                                 .authorized(:view_hosts, Host)
-                                .eager_load(proxy_connections_tables)
-                                .joins("LEFT JOIN smart_proxies ON smart_proxies.id IN (#{proxy_connections_columns.join(',')})")
+                                .eager_load(proxy_join_tables)
+                                .joins("LEFT JOIN smart_proxies ON smart_proxies.id IN (#{proxy_column_list})")
                                 .where(proxy_cond)
                                 .distinct
                                 .pluck('hosts.id')
@@ -206,7 +211,7 @@ module Hostext
         p.each do |param|
           case param.class.to_s
             when 'CommonParameter'
-              conditions << "1 = 1" #include all Global parameters
+              conditions << "1 = 1" # include all Global parameters
             when 'DomainParameter'
               conditions << "nics.domain_id = #{param.reference_id}"
             when 'OsParameter'
@@ -220,15 +225,6 @@ module Hostext
           end
         end
         conditions.empty? ? "" : "( #{conditions.join(' OR ')} )"
-      end
-
-      #override these if needed to add connection in plugin
-      def proxy_connections_columns
-        ['subnets.dhcp_id', 'subnets.dns_id', 'subnets.tftp_id', 'domains.dns_id', 'realms.realm_proxy_id', 'hosts.puppet_proxy_id', 'hosts.puppet_ca_proxy_id']
-      end
-
-      def proxy_connections_tables
-        [:realm, :interfaces => [:subnet, :domain]]
       end
     end
   end

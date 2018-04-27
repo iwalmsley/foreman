@@ -32,7 +32,7 @@ module Api
         param :smart_variable, Hash, :required => true, :action_aware => true do
           param :variable, String, :required => true, :desc => N_("Name of variable")
           param :puppetclass_id, :number, :desc => N_("Puppet class ID")
-          param :default_value, LookupKey::KEY_TYPES, :desc => N_("Default value of variable")
+          param :default_value, :any_type, :of => LookupKey::KEY_TYPES, :desc => N_("Default value of variable")
           param :hidden_value, :bool, :desc => N_("When enabled the parameter is hidden in the UI")
           param :override_value_order, String, :desc => N_("The order in which values are resolved")
           param :description, String, :desc => N_("Description of variable")
@@ -59,7 +59,7 @@ module Api
       param_group :smart_variable
 
       def update
-        @smart_variable.update_attributes!(variable_lookup_key_params)
+        @smart_variable.update!(variable_lookup_key_params)
         render 'api/v2/smart_variables/show'
       end
 

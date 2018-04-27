@@ -98,7 +98,7 @@ class EnvironmentsControllerTest < ActionController::TestCase
         }
       }, session: set_session_user
     assert_redirected_to environments_url
-    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:notice]
+    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:success]
     assert_equal ["a", "b", "c"],
       Environment.unscoped.find_by_name("env1").puppetclasses.map(&:name).sort
   end
@@ -107,8 +107,8 @@ class EnvironmentsControllerTest < ActionController::TestCase
     setup_import_classes
     as_admin {Puppetclass.create(:name => "d")}
     Environment.find_by_name("env1").puppetclasses << Puppetclass.find_by_name("d")
-    #db_tree   of {"env1" => ["a", "b", "c", "d"], "env2" => ["a", "b", "c"]}
-    #disk_tree of {"env1" => ["a", "b", "c"],      "env2" => ["a", "b", "c"]}
+    # db_tree   of {"env1" => ["a", "b", "c", "d"], "env2" => ["a", "b", "c"]}
+    # disk_tree of {"env1" => ["a", "b", "c"],      "env2" => ["a", "b", "c"]}
     get :import_environments, params: { :proxy => smart_proxies(:puppetmaster) }, session: set_session_user
     assert_template "common/_puppetclasses_or_envs_changed"
     assert_select 'input#changed_obsolete_env1[value*="d"]'
@@ -119,15 +119,15 @@ class EnvironmentsControllerTest < ActionController::TestCase
         }
       }, session: set_session_user
     assert_redirected_to environments_url
-    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:notice]
+    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:success]
     envs = Environment.unscoped.find_by_name("env1").puppetclasses.map(&:name).sort
     assert_equal ["a", "b", "c"], envs
   end
   test "should handle disk environment containing less environments" do
     setup_import_classes
     as_admin {Environment.create(:name => "env3")}
-    #db_tree   of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"], "env3" => []}
-    #disk_tree of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"]}
+    # db_tree   of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"], "env3" => []}
+    # disk_tree of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"]}
     get :import_environments, params: { :proxy => smart_proxies(:puppetmaster).id }, session: set_session_user
     assert_template "common/_puppetclasses_or_envs_changed"
     assert_select 'input#changed_obsolete_env3'
@@ -138,7 +138,7 @@ class EnvironmentsControllerTest < ActionController::TestCase
         }
       }, session: set_session_user
     assert_redirected_to environments_url
-    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:notice]
+    assert_equal "Successfully updated environments and Puppet classes from the on-disk Puppet installation", flash[:success]
     assert_equal [], Environment.unscoped.find_by_name("env3").puppetclasses.map(&:name).sort
   end
 
@@ -162,7 +162,7 @@ class EnvironmentsControllerTest < ActionController::TestCase
        }
      }, session: set_session_user
     assert Environment.unscoped.find_by_name("env1").hosts.count > 0
-    #assert flash[:error] =~ /^Failed to update the environments and puppetclasses from the on-disk puppet installation/
+    # assert flash[:error] =~ /^Failed to update the environments and puppetclasses from the on-disk puppet installation/
     assert Environment.unscoped.find_by_name("env1")
   end
 
@@ -173,13 +173,13 @@ class EnvironmentsControllerTest < ActionController::TestCase
       Environment.create :name => "env3"
       Environment.find_by_name("env2").destroy
     end
-    #db_tree   of {"env1" => ["a", "b", "c"], "env3" => []}
-    #disk_tree of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"]}
+    # db_tree   of {"env1" => ["a", "b", "c"], "env3" => []}
+    # disk_tree of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"]}
 
-    PuppetClassImporter.any_instance.stubs(:ignored_environments).returns(["env1","env2","env3"])
+    PuppetClassImporter.any_instance.stubs(:ignored_environments).returns(["env1", "env2", "env3"])
     get :import_environments, params: { :proxy => smart_proxies(:puppetmaster) }, session: set_session_user
 
-    assert_equal "No changes to your environments detected\nIgnored environments: env1, env2, and env3", flash[:notice]
+    assert_equal "No changes to your environments detected\nIgnored environments: env1, env2, and env3", flash[:info]
   end
 
   test "should obey puppet class filters in config/ignored_environments.yml" do
@@ -191,7 +191,7 @@ class EnvironmentsControllerTest < ActionController::TestCase
     PuppetClassImporter.any_instance.stubs(:ignored_classes).returns([/^a$/])
     get :import_environments, params: { :proxy => smart_proxies(:puppetmaster) }, session: set_session_user
 
-    assert_equal "No changes to your environments detected\nIgnored classes in the environments: env1 and env2", flash[:notice]
+    assert_equal "No changes to your environments detected\nIgnored classes in the environments: env1 and env2", flash[:info]
   end
 
   test 'it adds a warning when boolean keys are found' do
@@ -222,7 +222,6 @@ class EnvironmentsControllerTest < ActionController::TestCase
   test "should accept environment with name 'name'" do
     @request.env["HTTP_REFERER"] = environments_url
     ProxyAPI::Puppet.any_instance.stubs(:environments).returns(["new"])
-    get :import_environments, params: { :proxy => smart_proxies(:puppetmaster) }, session: set_session_user
     post :obsolete_and_new, params:
       { "changed" =>
        {"new" =>

@@ -1,11 +1,11 @@
 class Medium < ApplicationRecord
+  audited
   include Authorizable
   extend FriendlyId
   friendly_id :name
   include Taxonomix
   include ValidateOsFamily
   include Parameterizable::ByIdName
-  audited
 
   validates_lengths_from_database
 
@@ -55,7 +55,7 @@ class Medium < ApplicationRecord
 
   # Write the image path, with a trailing "/" if required
   def image_path=(path)
-    write_attribute :image_path, "#{path}#{'/' unless path =~ /\/$|^$/}"
+    self[:image_path] = "#{path}#{'/' unless path =~ /\/$|^$/}"
   end
 
   def ensure_hosts_not_in_build

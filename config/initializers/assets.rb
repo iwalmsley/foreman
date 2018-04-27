@@ -47,9 +47,9 @@ Foreman::Application.configure do |app|
 
   javascript += FastGettext.default_available_locales.map { |loc| "locale/#{loc}/app" }
 
-  stylesheets = %w( unimported/email.css )
+  stylesheets = %w(unimported/email.css)
 
-  images = %w(editable/clear.png patternfly/bg-modal-about-pf.png )
+  images = %w(editable/clear.png patternfly/bg-modal-about-pf.png)
 
   # Add the fonts path
   config.assets.paths << Rails.root.join('vendor', 'assets', 'fonts')
@@ -87,6 +87,27 @@ Foreman::Application.configure do |app|
         file.write(foreman_manifest.to_json)
         app.assets_manifest              = Sprockets::Manifest.new(app.assets, file.path)
         ActionView::Base.assets_manifest = app.assets_manifest
+      end
+    end
+
+    if (webpack_manifest_file = Dir.glob("#{Rails.root}/public/webpack/manifest.json").first)
+      webpack_manifest = JSON.parse(File.read(webpack_manifest_file))
+
+      Foreman::Plugin.all.each do |plugin|
+        # Manifests may be stored under the engine installation or under the Foreman app root, then
+        # either with just the plugin name or with hyphens replaced with underscores.
+        manifest_path = File.join(plugin.path, "/public/webpack/#{plugin.id}/manifest.json")
+
+        if File.file?(manifest_path)
+          Rails.logger.debug { "Loading #{plugin.id} webpack asset manifest from #{manifest_path}" }
+          assets = JSON.parse(File.read(manifest_path))
+
+          webpack_manifest['assetsByChunkName'] = webpack_manifest['assetsByChunkName'].merge(assets['assetsByChunkName'])
+        end
+      end
+
+      File.open(webpack_manifest_file, 'w') do |file|
+        file.write(webpack_manifest.to_json)
       end
     end
   end

@@ -32,7 +32,7 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
     set_class_variables(@host)
     Taxonomy.as_taxonomy @organization, @location do
       if @environment || @hostgroup
-        render :partial => 'puppetclasses/class_selection', :locals => {:obj => (@host)}
+        render :partial => 'puppetclasses/class_selection', :locals => {:obj => @host}
       else
         logger.info "environment_id or hostgroup_id is required to render puppetclasses"
       end
@@ -52,7 +52,7 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
   def update_multiple_puppetrun
     return deny_access unless Setting[:puppetrun]
     if @hosts.map(&:puppetrun!).uniq == [true]
-      notice _("Successfully executed, check reports and/or log files for more details")
+      success _("Successfully executed, check reports and/or log files for more details")
     else
       error _("Some or all hosts execution failed, Please check log files for more information")
     end
@@ -64,7 +64,7 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
 
   def update_multiple_environment
     # simple validations
-    if (params[:environment].nil?) || (id=params["environment"]["id"]).nil?
+    if params[:environment].nil? || (id=params["environment"]["id"]).nil?
       error _('No environment selected!')
       redirect_to(select_multiple_environment_hosts_path)
       return
@@ -72,19 +72,19 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
 
     ev = Environment.find_by_id(id)
 
-    #update the hosts
+    # update the hosts
     @hosts.each do |host|
       host.environment = (id == 'inherit' && host.hostgroup.present?) ? host.hostgroup.environment : ev
       host.save(:validate => false)
     end
 
-    notice _('Updated hosts: changed environment')
+    success _('Updated hosts: changed environment')
     redirect_back_or_to hosts_path
   end
 
   def environment_from_param
     # simple validations
-    if (params[:environment].nil?) || (id=params["environment"]["id"]).nil?
+    if params[:environment].nil? || (id=params["environment"]["id"]).nil?
       error _('No environment selected!')
       redirect_to(select_multiple_environment_hosts_path)
       return
@@ -120,7 +120,7 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
       return false
     end
 
-    if !proxy_id.blank? && !SmartProxy.find_by_id(proxy_id)
+    if proxy_id.present? && !SmartProxy.find_by_id(proxy_id)
       error _('Invalid proxy selected!')
       redirect_to(redirect_path)
       return false
@@ -150,9 +150,9 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
 
     if failed_hosts.empty?
       if proxy
-        notice _('The %{proxy_type} proxy of the selected hosts was set to %{proxy_name}') % {:proxy_name => proxy.name, :proxy_type => proxy_type}
+        success _('The %{proxy_type} proxy of the selected hosts was set to %{proxy_name}') % {:proxy_name => proxy.name, :proxy_type => proxy_type}
       else
-        notice _('The %{proxy_type} proxy of the selected hosts was cleared.') % {:proxy_type => proxy_type}
+        success _('The %{proxy_type} proxy of the selected hosts was cleared.') % {:proxy_type => proxy_type}
       end
     else
       error n_("The %{proxy_type} proxy could not be set for host: %{host_names}.",
@@ -165,9 +165,9 @@ module Foreman::Controller::Puppet::HostsControllerExtensions
   def handle_proxy_messages(errors, proxy, proxy_type)
     if errors.empty?
       if proxy
-        notice _('The %{proxy_type} proxy of the selected hosts was set to %{proxy_name}.') % {:proxy_name => proxy.name, :proxy_type => proxy_type}
+        success _('The %{proxy_type} proxy of the selected hosts was set to %{proxy_name}.') % {:proxy_name => proxy.name, :proxy_type => proxy_type}
       else
-        notice _('The %{proxy_type} proxy of the selected hosts was cleared.') % {:proxy_type => proxy_type}
+        success _('The %{proxy_type} proxy of the selected hosts was cleared.') % {:proxy_type => proxy_type}
       end
     else
       error n_("The %{proxy_type} proxy could not be set for host: %{host_names}.",

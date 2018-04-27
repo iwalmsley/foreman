@@ -8,7 +8,12 @@ require 'capybara/poltergeist'
 require 'show_me_the_cookies'
 require 'database_cleaner'
 require 'active_support_test_case_helper'
-require 'minitest-optional_retry'
+require 'minitest/retry'
+Minitest::Retry.use!
+
+Minitest::Retry.on_consistent_failure do |klass, test_name|
+  Rails.logger.error("DO NOT IGNORE - Consistent failure - #{klass} #{test_name}")
+end
 
 Capybara.register_driver :poltergeist do |app|
   opts = {
@@ -34,20 +39,20 @@ class ActionDispatch::IntegrationTest
   # Stop ActiveRecord from wrapping tests in transactions
   self.use_transactional_tests = false
 
-  def assert_index_page(index_path,title_text,new_link_text = nil,has_search = true,has_pagination = true)
+  def assert_index_page(index_path, title_text, new_link_text = nil, has_search = true, has_pagination = true)
     visit index_path
-    assert page.has_selector?('h1', :text => title_text), "#{title_text} was expected in the <h1> tag, but was not found"
+    assert page.has_selector?(:xpath, "//div[@id='breadcrumb'and contains(.,'#{title_text}')]"), "#{title_text} was expected in the div[@breadcrumb] tag, but was not found"
     (assert first(:link, new_link_text).visible?, "#{new_link_text} is not visible") if new_link_text
     (assert find_button('Search').visible?, "Search button is not visible") if has_search
   end
 
-  def assert_new_button(index_path,new_link_text,new_path)
+  def assert_new_button(index_path, new_link_text, new_path)
     visit index_path
     first(:link, new_link_text).click
     assert_current_path new_path
   end
 
-  def assert_submit_button(redirect_path,button_text = "Submit")
+  def assert_submit_button(redirect_path, button_text = "Submit")
     click_button button_text
     assert_current_path redirect_path
   end
@@ -163,7 +168,7 @@ class ActionDispatch::IntegrationTest
   end
 
   def assert_warning(message)
-    assert notification_messages['warning'].include?(message)
+    assert warning_notificication_messages.include?(message)
   end
 
   def assert_form_tab(label)
@@ -172,17 +177,25 @@ class ActionDispatch::IntegrationTest
     end
   end
 
-  def notification_messages
-    Hash[JSON.parse(page.find(:css, "div#notifications")['data-flash'])]
+  def warning_notificication_messages
+    warning_notificications_data.map { |n| n['message'] }
+  end
+
+  def warning_notificications_data
+    notifications_data.select { |n| n['type'] == "warning" }
+  end
+
+  def notifications_data
+    JSON.parse(page.find(:css, "div#toast-notifications-container")['data-notifications']).map { |n| Hash[n]}
   end
 
   setup :start_database_cleaner, :login_admin
 
   teardown do
-    DatabaseCleaner.clean       # Truncate the database
     Capybara.reset_sessions!    # Forget the (simulated) browser state
     Capybara.use_default_driver # Revert Capybara.current_driver to Capybara.default_driver
     SSO.deregister_method(TestSSO)
+    DatabaseCleaner.clean       # Truncate the database
   end
 
   private

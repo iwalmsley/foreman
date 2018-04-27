@@ -28,7 +28,7 @@ class ComputeProfilesController < ApplicationController
   end
 
   def update
-    if @compute_profile.update_attributes(compute_profile_params)
+    if @compute_profile.update(compute_profile_params)
       process_success
     else
       process_error
@@ -41,11 +41,5 @@ class ComputeProfilesController < ApplicationController
     else
       process_error
     end
-  end
-
-  private
-
-  def two_pane?
-    super && params[:action] != 'show'
   end
 end

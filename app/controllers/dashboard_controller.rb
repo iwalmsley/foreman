@@ -56,9 +56,9 @@ class DashboardController < ApplicationController
     errors = []
     filter = self.class.widget_params_filter
     params.fetch(:widgets, []).each do |id, values|
-      widget = User.current.widgets.where("id = #{id}").first
+      widget = User.current.widgets.where(:id => id).first
       values = filter.filter_params(values, parameter_filter_context, :none)
-      errors << widget.errors unless widget.update_attributes(values)
+      errors << widget.errors unless widget.update(values)
     end
     respond_to do |format|
       if errors.empty?
@@ -74,7 +74,8 @@ class DashboardController < ApplicationController
   private
 
   def init_widget_data
-    @data = Dashboard::Data.new(params[:search])
+    find_resource unless @widget
+    @data = Dashboard::Data.new(params[:search], @widget.data[:settings])
   end
 
   def resource_name

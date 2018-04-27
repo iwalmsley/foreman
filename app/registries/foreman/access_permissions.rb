@@ -28,13 +28,17 @@ Foreman::AccessControl.map do |permission_set|
   permission_set.security_block :authentication_providers do |map|
     ajax_actions = [:test_connection]
     map.permission :view_authenticators, {:auth_source_ldaps => [:index, :show],
-                                             :"api/v2/auth_source_ldaps" => [:index, :show]
+                                             :"api/v2/auth_source_ldaps" => [:index, :show],
+                                             :"api/v2/auth_sources" => [:index, :show],
+                                             :"api/v2/auth_source_internals" => [:index, :show],
+                                             :"api/v2/auth_source_externals" => [:index, :show]
     }
     map.permission :create_authenticators, {:auth_source_ldaps => [:new, :create].push(*ajax_actions),
                                              :"api/v2/auth_source_ldaps" => [:create]
     }
     map.permission :edit_authenticators, {:auth_source_ldaps => [:edit, :update].push(*ajax_actions),
-                                             :"api/v2/auth_source_ldaps" => [:update, :test]
+                                             :"api/v2/auth_source_ldaps" => [:update, :test],
+                                             :"api/v2/auth_source_externals" => [:update]
     }
     map.permission :destroy_authenticators, {:auth_source_ldaps => [:destroy],
                                              :"api/v2/auth_source_ldaps" => [:destroy]
@@ -106,12 +110,12 @@ Foreman::AccessControl.map do |permission_set|
                                       }
     map.permission :create_provisioning_templates,  {:provisioning_templates => [:new, :create, :clone_template],
                                         :"api/v2/config_templates" => [:create, :clone],
-                                        :"api/v2/provisioning_templates" => [:create, :clone],
+                                        :"api/v2/provisioning_templates" => [:create, :clone, :import],
                                         :"api/v2/template_combinations" => [:create]
                                       }
     map.permission :edit_provisioning_templates,    {:provisioning_templates => [:edit, :update],
                                         :"api/v2/config_templates" => [:update],
-                                        :"api/v2/provisioning_templates" => [:update],
+                                        :"api/v2/provisioning_templates" => [:update, :import],
                                         :"api/v2/template_combinations" => [:update]
                                       }
     map.permission :destroy_provisioning_templates, {:provisioning_templates => [:destroy],
@@ -482,10 +486,10 @@ Foreman::AccessControl.map do |permission_set|
                                       :"api/v2/ptables" => [:index, :show, :revision, :export]
     }
     map.permission :create_ptables, {:ptables => [:new, :create, :clone_template],
-                                      :"api/v2/ptables" => [:create, :clone]
+                                      :"api/v2/ptables" => [:create, :clone, :import]
     }
     map.permission :edit_ptables, {:ptables => [:edit, :update],
-                                      :"api/v2/ptables" => [:update]
+                                      :"api/v2/ptables" => [:update, :import]
     }
     map.permission :destroy_ptables, {:ptables => [:destroy],
                                       :"api/v2/ptables" => [:destroy]

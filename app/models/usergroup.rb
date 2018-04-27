@@ -1,5 +1,5 @@
 class Usergroup < ApplicationRecord
-  audited
+  audited :associations => [:usergroups, :roles, :users]
   include Authorizable
   extend FriendlyId
   friendly_id :name
@@ -22,7 +22,7 @@ class Usergroup < ApplicationRecord
   has_many :cached_usergroups, :through => :cached_usergroup_members, :source => :usergroup
   has_many :cached_usergroup_members, :foreign_key => 'usergroup_id'
   has_many :usergroup_parents, -> { where("member_type = 'Usergroup'") }, :dependent => :destroy,
-    :foreign_key => 'member_id', :class_name => 'UsergroupMember'
+           :foreign_key => 'member_id', :class_name => 'UsergroupMember'
   has_many :parents,    :through => :usergroup_parents, :source => :usergroup, :dependent => :destroy
 
   has_many_hosts :as => :owner
@@ -109,7 +109,7 @@ class Usergroup < ApplicationRecord
   end
 
   def ensure_uniq_name
-    errors.add :name, _("is already used by a user account") if User.where(:login => name).first
+    errors.add :name, _("is already used by a user account") if User.find_by(:login => name)
   end
 
   def ensure_last_admin_remains_admin

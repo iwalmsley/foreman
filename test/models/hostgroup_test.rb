@@ -94,21 +94,21 @@ class HostgroupTest < ActiveSupport::TestCase
   end
 
   test "changing name of hostgroup updates other hostgroup labels" do
-    #setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
+    # setup - add parent to hostgroup :common (not in fixtures, since no field parent_id)
     hostgroup = hostgroups(:db)
     parent_hostgroup = hostgroups(:common)
     hostgroup.parent_id = parent_hostgroup.id
     assert hostgroup.save!
 
     # change name of parent
-    assert parent_hostgroup.update_attributes(:name => "new_common")
+    assert parent_hostgroup.update(:name => "new_common")
     # check if hostgroup(:db) label changed
     hostgroup.reload
     assert_equal "new_common/db", hostgroup.title
   end
 
   test "deleting a hostgroup with children does not change labels" do
-    #setup - get label "common/db"
+    # setup - get label "common/db"
     hostgroup = hostgroups(:db)
     parent_hostgroup = hostgroups(:common)
     hostgroup.parent_id = parent_hostgroup.id
@@ -116,7 +116,7 @@ class HostgroupTest < ActiveSupport::TestCase
     hostgroup.reload
     assert_equal "Common/db", hostgroup.title
 
-    #attempt to destroy parent hostgroup
+    # attempt to destroy parent hostgroup
     begin
       assert_not parent_hostgroup.destroy
     rescue Ancestry::AncestryException
@@ -349,7 +349,9 @@ class HostgroupTest < ActiveSupport::TestCase
 
   test "hostgroup name can't be too big to create lookup value matcher over 255 characters" do
     parent = FactoryBot.create(:hostgroup)
+    # rubocop:disable Performance/FixedSize
     min_lookupvalue_length = "hostgroup=".length + parent.title.length + 1
+    # rubocop:enable Performance/FixedSize
     hostgroup = Hostgroup.new :parent => parent, :name => 'a' * 256
     refute_valid hostgroup
     assert_equal "is too long (maximum is %s characters)" % (255 - min_lookupvalue_length), hostgroup.errors[:name].first
@@ -357,7 +359,9 @@ class HostgroupTest < ActiveSupport::TestCase
 
   test "hostgroup name can be up to 255 characters" do
     parent = FactoryBot.create(:hostgroup)
+    # rubocop:disable Performance/FixedSize
     min_lookupvalue_length = "hostgroup=".length + parent.title.length + 1
+    # rubocop:enable Performance/FixedSize
     hostgroup = Hostgroup.new :parent => parent, :name => 'a' * (255 - min_lookupvalue_length)
     assert_valid hostgroup
   end
@@ -387,6 +391,45 @@ class HostgroupTest < ActiveSupport::TestCase
     hostgroup = Hostgroup.create(:parent => parent, :name => 'b')
     hostgroup.expects(:ancestry).never
     hostgroup.to_param
+  end
+
+  test 'with both subnet and subnet6 should be valid if VLAN ID is consistent between subnets' do
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :vlanid => 14)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => 14)
+    hostgroup = FactoryBot.build(:hostgroup, :subnet => subnet, :subnet6 => subnet6)
+    assert_valid hostgroup
+  end
+
+  test 'with both subnet and subnet6 should not be valid if VLAN ID mismatch between subnets' do
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :vlanid => 3)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => 4)
+    hostgroup = FactoryBot.build(:hostgroup, :subnet => subnet, :subnet6 => subnet6)
+    refute_valid hostgroup
+    assert_includes hostgroup.errors.keys, :subnet_id
+
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => nil)
+    hostgroup = FactoryBot.build(:hostgroup, :subnet => subnet, :subnet6 => subnet6)
+    refute_valid hostgroup
+    assert_includes hostgroup.errors.keys, :subnet_id
+  end
+
+  test 'with both subnet and subnet6 should be valid if MTU is consistent between subnets' do
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :mtu => 1496)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :mtu => 1496)
+    hostgroup = FactoryBot.build(:hostgroup, :subnet => subnet, :subnet6 => subnet6)
+    assert_valid hostgroup
+  end
+
+  test 'with both subnet and subnet6 should not be valid if MTU mismatch between subnets' do
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :mtu => 1496)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :mtu => 1500)
+    hostgroup = FactoryBot.build(:hostgroup, :subnet => subnet, :subnet6 => subnet6)
+    refute_valid hostgroup
+    assert_includes hostgroup.errors.keys, :subnet_id
   end
 
   context "#clone" do

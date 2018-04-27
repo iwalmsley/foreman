@@ -3,25 +3,29 @@ require 'integration_test_helper'
 class DashboardIntegrationTest < IntegrationTestWithJavascript
   # intermittent failures:
   #   DashboardIntegrationTest.test_0005_dashboard link hosts that had pending changes
-  extend MiniTest::OptionalRetry
 
   def setup
     Dashboard::Manager.reset_user_to_default(users(:admin))
+    Setting[:outofsync_interval] = 35
   end
 
   def assert_dashboard_link(text)
-    visit dashboard_path
-    wait_for_ajax
+    visit_dashboard
     assert page.has_link?(text), "link '#{text}' was expected, but it does not exist"
-    within "li[data-name='Host Configuration Status']" do
+    within "li[data-name='Host Configuration Status for All']" do
       click_link(text)
     end
-    assert_current_path hosts_path, :only_path => true
+    assert_current_path hosts_path, :ignore_query => true
     assert_match(/search=/, current_url)
   end
 
+  def visit_dashboard
+    visit dashboard_path
+    wait_for_ajax
+  end
+
   test "dashboard page" do
-    assert_index_page(dashboard_path,"Overview",false,true,false)
+    assert_index_page(dashboard_path, "Overview", false, true, false)
     wait_for_ajax
     assert page.has_content? 'Generated at'
   end
@@ -35,7 +39,7 @@ class DashboardIntegrationTest < IntegrationTestWithJavascript
   end
 
   test "dashboard link good host reports" do
-    assert_dashboard_link 'Good host reports in the last 35 minutes'
+    assert_dashboard_link "Good host reports in the last 35 minutes"
   end
 
   test "dashboard link hosts that had pending changes" do
@@ -44,6 +48,30 @@ class DashboardIntegrationTest < IntegrationTestWithJavascript
 
   test "dashboard link out of sync hosts" do
     assert_dashboard_link 'Out of sync hosts'
+  end
+
+  context 'with origin' do
+    setup do
+      Setting::Puppet.load_defaults
+      Setting[:puppet_out_of_sync_disabled] = true
+    end
+
+    context 'out of sync disabled' do
+      test 'has no out of sync link' do
+        visit_dashboard
+        within "li[data-name='Host Configuration Status for Puppet']" do
+          refute page.has_link?('Out of sync hosts')
+        end
+      end
+
+      test 'good hosts link drops time' do
+        visit_dashboard
+        within "li[data-name='Host Configuration Status for Puppet']" do
+          refute page.has_link?('Good host reports in the last')
+          assert page.has_link?('Good host with reports')
+        end
+      end
+    end
   end
 
   test "dashboard link hosts with no reports" do

@@ -123,7 +123,7 @@ class ProvisioningTemplatesControllerTest < ActionController::TestCase
         end
         template = File.read(File.expand_path(File.dirname(__FILE__) + "/../../app/views/unattended/provisioning_templates/#{kind}/#{kind.downcase}_global_default.erb"))
         template_kind = TemplateKind.find_by :name => kind
-        ProvisioningTemplate.find_or_create_by(:name => "#{kind} global default").update_attributes(:template => template, :template_kind => template_kind)
+        ProvisioningTemplate.find_or_create_by(:name => "#{kind} global default").update(:template => template, :template_kind => template_kind)
       end
       ProxyAPI::TFTP.any_instance.stubs(:fetch_boot_file).returns(true)
       Setting[:unattended_url] = "http://foreman.unattended.url"
@@ -133,7 +133,7 @@ class ProvisioningTemplatesControllerTest < ActionController::TestCase
     test "build menu" do
       ProxyAPI::TFTP.any_instance.expects(:create_default).with(regexp_matches(/^PXE.*/), has_entry(:menu, regexp_matches(/ks=http:\/\/foreman.unattended.url\/unattended\/template/))).returns(true).times(3)
       get :build_pxe_default, session: set_session_user
-      assert flash[:notice].present?
+      assert flash[:success].present?
       assert flash[:error].empty?
       assert_redirected_to provisioning_templates_path
     end
@@ -182,7 +182,7 @@ class ProvisioningTemplatesControllerTest < ActionController::TestCase
 
     # works for given host
     post :preview, params: { :preview_host_id => host.id, :template => '<%= @host.name -%>', :id => template }, session: set_session_user
-    assert_equal (host.hostname).to_s, @response.body
+    assert_equal host.hostname.to_s, @response.body
 
     # without host specified it uses first one
     post :preview, params: { :template => '<%= 1+1 -%>', :id => template }, session: set_session_user

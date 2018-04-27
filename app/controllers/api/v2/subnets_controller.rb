@@ -37,13 +37,14 @@ module Api
           param :network_type, Subnet::SUBNET_TYPES.values, :desc => N_('Type or protocol, IPv4 or IPv6, defaults to IPv4')
           param :network, String, :desc => N_("Subnet network"), :required => true
           param :mask, String, :desc => N_("Netmask for this subnet"), :required => true
-          param :gateway, String, :desc => N_("Primary DNS for this subnet")
+          param :gateway, String, :desc => N_("Subnet gateway")
           param :dns_primary, String, :desc => N_("Primary DNS for this subnet")
           param :dns_secondary, String, :desc => N_("Secondary DNS for this subnet")
           param :ipam, String, :desc => N_('IP Address auto suggestion mode for this subnet, valid values are "DHCP", "Internal DB", "None"')
           param :from, String, :desc => N_("Starting IP Address for IP auto suggestion")
           param :to, String, :desc => N_("Ending IP Address for IP auto suggestion")
           param :vlanid, String, :desc => N_("VLAN ID for this subnet")
+          param :mtu, Integer, :desc => N_("MTU for this subnet")
           param :domain_ids, Array, :desc => N_("Domains in which this subnet is part")
           Subnet.registered_smart_proxies.each do |name, options|
             param :"#{name}_id", :number, :desc => options[:api_description]
@@ -67,7 +68,7 @@ module Api
       param_group :subnet
 
       def update
-        process_response @subnet.update_attributes(subnet_params)
+        process_response @subnet.update(subnet_params)
       end
 
       api :DELETE, '/subnets/:id', N_("Delete a subnet")

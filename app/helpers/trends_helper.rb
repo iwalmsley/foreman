@@ -3,9 +3,9 @@ module TrendsHelper
 
   def trendable_types
     options = {_('Environment') => 'Environment', _('Operating system') => 'Operatingsystem',
-               _('Model') => 'Model', _('Facts') =>'FactName',_('Host group') => 'Hostgroup', _('Compute resource') => 'ComputeResource'}
+               _('Model') => 'Model', _('Facts') =>'FactName', _('Host group') => 'Hostgroup', _('Compute resource') => 'ComputeResource'}
     existing = ForemanTrend.types.pluck(:trendable_type)
-    options.delete_if{ |k,v| existing.include?(v) }
+    options.delete_if{ |k, v| existing.include?(v) }
   end
 
   def trend_days_filter
@@ -25,7 +25,7 @@ module TrendsHelper
   end
 
   def chart_data(trend, from = Setting[:max_trend], to = Time.now.utc)
-    chart_colors = ['#4572A7','#AA4643','#89A54E','#80699B','#3D96AE','#DB843D','#92A8CD','#A47D7C','#B5CA92']
+    chart_colors = ['#4572A7', '#AA4643', '#89A54E', '#80699B', '#3D96AE', '#DB843D', '#92A8CD', '#A47D7C', '#B5CA92']
     values = trend.values
     labels = {}
     values.includes(:trendable).each {|v| labels[v.id] = [CGI.escapeHTML(v.to_label), trend_path(:id => v)]}
@@ -34,10 +34,10 @@ module TrendsHelper
                                     .each_with_index.map do |value, idx|
       data = []
       value.trend_counters.each do |counter|
-        #cut the left side of the graph
+        # cut the left side of the graph
         interval_start = ((counter.interval_start || from) > from) ? counter.interval_start : from
         next_timestamp = counter.try(:interval_end) || Time.now.utc
-        #transform the timestamp values to flot format - from seconds in Ruby to milliseconds in flot
+        # transform the timestamp values to flot format - from seconds in Ruby to milliseconds in flot
         data << [interval_start.to_i*1000, counter.count]
         data << [next_timestamp.to_i*1000 - 1, counter.count]
       end

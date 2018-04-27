@@ -1,6 +1,6 @@
 require 'securerandom'
 
-#Common methods between host and hostgroup
+# Common methods between host and hostgroup
 # mostly for template rendering consistency
 module HostCommon
   extend ActiveSupport::Concern
@@ -22,6 +22,9 @@ module HostCommon
     belongs_to :architecture
     belongs_to :environment
     belongs_to :operatingsystem
+
+    include SmartProxyHostExtensions
+
     belongs_to :medium
     belongs_to :ptable
     belongs_to :realm
@@ -100,7 +103,7 @@ module HostCommon
   # Else if the host/hostgroup's operatingsystem has only one media then use the image_path from that as this is automatically displayed when there is only one item
   # Else we cannot provide a default and it is cut and paste time
   def default_image_file
-    return "" unless operatingsystem && operatingsystem.supports_image
+    return "" unless operatingsystem&.supports_image
     if medium
       nfs_path = medium.try :image_path
       if operatingsystem.try(:media) && operatingsystem.media.size == 1
@@ -120,7 +123,7 @@ module HostCommon
     # We only save a value into the image_file field if the value is not the default path, (which was placed in the entry when it was displayed,)
     # and it is not a directory, (ends in /)
     value = ((default_image_file == file) || (file =~ /\/\Z/) || file == "") ? nil : file
-    write_attribute :image_file, value
+    self[:image_file] = value
   end
 
   def image_file
@@ -131,7 +134,7 @@ module HostCommon
     # hosts will always copy and crypt the password from parents when saved, but hostgroups should
     # only crypt if the attribute is stored, else will stay blank and inherit
     unencrypted_pass = if is_a?(Hostgroup)
-                         read_attribute(:root_pass)
+                         self[:root_pass]
                        else
                          root_pass
                        end
@@ -220,8 +223,8 @@ module HostCommon
   protected
 
   def set_lookup_value_matcher
-    #in migrations, this method can get called before the attribute exists
-    #the #attribute_names method is cached, so it's not going to be a performance issue
+    # in migrations, this method can get called before the attribute exists
+    # the #attribute_names method is cached, so it's not going to be a performance issue
     return true unless self.class.attribute_names.include?("lookup_value_matcher")
     self.lookup_value_matcher = lookup_value_match
   end

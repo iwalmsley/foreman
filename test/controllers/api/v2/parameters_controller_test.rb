@@ -70,14 +70,14 @@ class Api::V2::ParametersControllerTest < ActionController::TestCase
   end
 
   test "should show a hostgroup parameter" do
-    get :show, params: {:hostgroup_id => hostgroups(:common).to_param,:id => parameters(:group).to_param }
+    get :show, params: {:hostgroup_id => hostgroups(:common).to_param, :id => parameters(:group).to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
     assert_not_empty show_response
   end
 
   test "should show an os parameter" do
-    get :show, params: {:operatingsystem_id => operatingsystems(:redhat).to_param,:id => parameters(:os).to_param }
+    get :show, params: {:operatingsystem_id => operatingsystems(:redhat).to_param, :id => parameters(:os).to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
     assert_not_empty show_response
@@ -109,7 +109,7 @@ class Api::V2::ParametersControllerTest < ActionController::TestCase
     # create DomainParamter with name name
     assert Domain.first.parameters.create(:name => 'os1')
     param = parameters(:os)
-    get :show, params: {:operatingsystem_id => operatingsystems(:redhat).to_param,:id => param.name }
+    get :show, params: {:operatingsystem_id => operatingsystems(:redhat).to_param, :id => param.name }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
     assert_equal param.id, show_response['id']
@@ -136,6 +136,51 @@ class Api::V2::ParametersControllerTest < ActionController::TestCase
       post :create, params: { :subnet_id => subnet.to_param, :parameter => valid_attrs }
     end
     assert_response :created
+    assert_equal JSON.parse(@response.body)['name'], valid_attrs[:name], "Can't create subnet parameter with valid name #{valid_attrs[:name]}"
+    assert_equal JSON.parse(@response.body)['value'], valid_attrs[:value], "Can't create subnet parameter with valid value #{valid_attrs[:value]}"
+  end
+
+  test "should create subnet parameter with valid separator in value" do
+    subnet = subnets(:five)
+    name = 'key'
+    if ActiveRecord::Base.connection.adapter_name.downcase =~ /mysql/
+      value = RFauxFactory.gen_strings(:exclude => [:utf8]).values.join(", ")
+    else
+      value = RFauxFactory.gen_strings().values.join(", ")
+    end
+    assert_difference('subnet.parameters.count') do
+      post :create, params: { :subnet_id => subnet.id, :parameter => { :name => name, :value => value } }
+    end
+    assert_response :created
+    assert_equal JSON.parse(@response.body)['name'], name, "Can't create subnet parameter with valid name #{name}"
+    assert_equal JSON.parse(@response.body)['value'], value, "Can't create subnet parameter with valid value #{value}"
+  end
+
+  test "should not create duplicate subnet parameter" do
+    subnet = subnets(:five)
+    post :create, params: { :subnet_id => subnet.id, :parameter => valid_attrs }
+    assert_response :created
+    assert_difference('subnet.parameters.count', 0) do
+      post :create, params: { :subnet_id => subnet.id, :parameter => valid_attrs }
+    end
+    assert_response :unprocessable_entity
+  end
+
+  test "should not create with invalid separator in name" do
+    subnet = subnets(:five)
+    assert_difference('subnet.parameters.count', 0) do
+      post :create, params: { :subnet_id => subnet.id, :parameter => { :name => 'name with space', :value => '123' } }
+    end
+    assert_response :unprocessable_entity
+  end
+
+  test "should not update with invalid separator in name" do
+    subnet = subnets(:five)
+    param_name = subnet.parameters.first.name
+    put :update, params: { :subnet_id => subnet.id, :id => subnet.parameters.first.id, :parameter => { :name => 'name with space', :value => '123' } }
+    assert_response :unprocessable_entity
+    assert_equal param_name, Subnet.unscoped.find_by_name(subnet.name).parameters.
+        order("parameters.updated_at").last.name
   end
 
   test "should create hostgroup parameter" do

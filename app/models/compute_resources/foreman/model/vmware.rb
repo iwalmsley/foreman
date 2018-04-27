@@ -48,9 +48,9 @@ module Foreman::Model
       if opts[:eager_loading] == true
         super()
       else
-        #VMware server loading is very slow
-        #not using FOG models directly to save the time
-        #and minimize the amount of time required (as we don't require all attributes by default when listing)
+        # VMware server loading is very slow
+        # not using FOG models directly to save the time
+        # and minimize the amount of time required (as we don't require all attributes by default when listing)
         FogExtensions::Vsphere::MiniServers.new(client, datacenter)
       end
     end
@@ -419,13 +419,13 @@ module Foreman::Model
     def parse_networks(args)
       args = args.deep_dup
       dc_networks = networks
-      args["interfaces_attributes"].each do |key, interface|
+      args["interfaces_attributes"]&.each do |key, interface|
         # Convert network id into name
         net = dc_networks.detect { |n| [n.id, n.name].include?(interface['network']) }
         raise "Unknown Network ID: #{interface['network']}" if net.nil?
         interface["network"] = net.name
         interface["virtualswitch"] = net.virtualswitch
-      end if args["interfaces_attributes"]
+      end
       args
     end
 
@@ -444,7 +444,7 @@ module Foreman::Model
       end
     rescue Fog::Errors::Error => e
       Foreman::Logging.exception("Unhandled VMware error", e)
-      destroy_vm vm.id if vm && vm.id
+      destroy_vm vm.id if vm&.id
       raise e
     end
 
@@ -457,7 +457,7 @@ module Foreman::Model
     def save_vm(uuid, attr)
       vm = find_vm_by_uuid(uuid)
       vm.attributes.merge!(attr.deep_symbolize_keys)
-      #volumes are not part of vm.attributes so we have to set them seperately if needed
+      # volumes are not part of vm.attributes so we have to set them seperately if needed
       if attr.has_key?(:volumes_attributes)
         vm.volumes.each do |vm_volume|
           volume_attrs = attr[:volumes_attributes].values.detect {|vol| vol[:id] == vm_volume.id}
@@ -494,7 +494,7 @@ module Foreman::Model
         "datastore" => args[:volumes].first[:datastore],
         "storage_pod" => args[:volumes].first[:storage_pod],
         "resource_pool" => [args[:cluster], args[:resource_pool]],
-        "boot_order" => [:disk],
+        "boot_order" => [:disk]
       }
 
       opts['transform'] = (args[:volumes].first[:thin] == 'true') ? 'sparse' : 'flat' unless args[:volumes].empty?
@@ -582,7 +582,7 @@ module Foreman::Model
       vm_attrs = super
       dc_networks = networks
       interfaces = vm.interfaces || []
-      vm_attrs[:interfaces_attributes] = interfaces.each_with_index.inject({}) do |hsh, (interface, index)|
+      vm_attrs[:interfaces_attributes] = interfaces.each_with_index.each_with_object({}) do |(interface, index), hsh|
         network = dc_networks.detect { |n| [n.id, n.name].include?(interface.network) }
         raise Foreman::Exception.new(N_("Could not find network %s on VMWare compute resource"), interface.network) unless network
         interface_attrs = {}
@@ -591,7 +591,6 @@ module Foreman::Model
         interface_attrs[:compute_attributes][:network] = network.name
         interface_attrs[:compute_attributes][:type] = interface.type.to_s.split('::').last
         hsh[index.to_s] = interface_attrs
-        hsh
       end
       vm_attrs[:scsi_controllers] = vm.scsi_controllers.map do |controller|
         controller.attributes
@@ -640,7 +639,7 @@ module Foreman::Model
 
     def vm_instance_defaults
       super.merge(
-        :memory_mb  => 768,
+        :memory_mb  => 2048,
         :interfaces => [new_interface],
         :volumes    => [new_volume],
         :scsi_controllers => [{ :type => scsi_controller_default_type }],

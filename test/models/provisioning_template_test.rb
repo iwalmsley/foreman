@@ -49,9 +49,9 @@ class ProvisioningTemplateTest < ActiveSupport::TestCase
       assert tmplt.save
     end
     assert_nil tmplt.template_kind
-    assert_equal [],tmplt.hostgroups
-    assert_equal [],tmplt.environments
-    assert_equal [],tmplt.template_combinations
+    assert_equal [], tmplt.hostgroups
+    assert_equal [], tmplt.environments
+    assert_equal [], tmplt.template_combinations
   end
 
   # If the template is not a snippet is should require the specific declaration
@@ -116,6 +116,20 @@ class ProvisioningTemplateTest < ActiveSupport::TestCase
     assert_equal clone.template, tmplt.template
     assert tmplt.locked
     refute clone.locked
+  end
+
+  test "locked template can be modified if it's being unlocked at the same time" do
+    tmplt = templates(:locked)
+    tmplt.template = 'new_content'
+    tmplt.locked = false
+    assert tmplt.valid?
+  end
+
+  test "unlocked template can be modified if it's being locked at the same time" do
+    tmplt = templates(:mystring)
+    tmplt.template = 'new_content'
+    tmplt.locked = true
+    assert tmplt.valid?
   end
 
   test "should change a locked template while in rake" do
@@ -216,7 +230,9 @@ class ProvisioningTemplateTest < ActiveSupport::TestCase
     end
 
     test "should call build_pxe_default with allowed_helpers containing the default helpers" do
-      TemplatesController.any_instance.expects(:render_safe).twice.with(anything, includes(*Foreman::Renderer::ALLOWED_GENERIC_HELPERS), anything).returns(true)
+      ProxyAPI::TFTP.any_instance.stubs(:create_default).returns(true)
+      ProxyAPI::TFTP.any_instance.stubs(:fetch_boot_file).returns(true)
+      TemplatesController.any_instance.expects(:render_safe).times(3).with(anything, includes(*Foreman::Renderer::ALLOWED_GENERIC_HELPERS), anything).returns(true)
       ProvisioningTemplate.build_pxe_default(TemplatesController.new)
     end
 
@@ -233,6 +249,42 @@ class ProvisioningTemplateTest < ActiveSupport::TestCase
       assert_equal 1, lines.select { |l| l == '- CentOS' }.size
       assert_includes lines, "kind: #{template.template_kind.name}"
       assert_includes lines, "name: #{template.name}"
+    end
+  end
+
+  context 'importing' do
+    describe '#import_custom_data' do
+      setup do
+        @template = ProvisioningTemplate.new
+        @template.stubs(:import_oses)
+      end
+
+      test 'it sets kind to nil if snippet is being imported' do
+        @template.instance_variable_set '@importing_metadata', { 'kind' => 'some' }
+        @template.snippet = true
+        @template.send :import_custom_data, { :associate => 'always' }
+        assert_nil @template.template_kind
+      end
+
+      test 'it skips kind selection if it is missing in metadata' do
+        @template.instance_variable_set '@importing_metadata', { }
+        @template.send :import_custom_data, { :associate => 'always' }
+        assert_nil @template.template_kind
+      end
+
+      test 'it sets the kind based on metadata' do
+        kind = FactoryBot.create(:template_kind)
+        @template.instance_variable_set '@importing_metadata', { 'kind' => kind.name }
+        @template.send :import_custom_data, { :associate => 'always' }
+        assert_equal kind, @template.template_kind
+      end
+
+      test 'it errors out if invalid/unknown kind was specified' do
+        @template.instance_variable_set '@importing_metadata', { 'kind' => 'not existing kind name' }
+        @template.send :import_custom_data, { :associate => 'always' }
+        assert_nil @template.template_kind
+        assert_includes @template.errors.keys, :template_kind_id
+      end
     end
   end
 end

@@ -2,7 +2,7 @@ require 'test_helper'
 
 class PuppetClassImporterTest < ActiveSupport::TestCase
   def setup
-    ProxyAPI::Puppet.any_instance.stubs(:environments).returns(["foreman-testing","foreman-testing-1"])
+    ProxyAPI::Puppet.any_instance.stubs(:environments).returns(["foreman-testing", "foreman-testing-1"])
     ProxyAPI::Puppet.any_instance.stubs(:classes).returns(mocked_classes)
     User.current = User.find_by :login => "foreman_admin"
   end
@@ -169,8 +169,8 @@ class PuppetClassImporterTest < ActiveSupport::TestCase
 
   test "should obey config/ignored_environments.yml" do
     as_admin do
-      hostgroups(:inherited).destroy #needs to be deleted first, since it has ancestry
-      Hostgroup.destroy_all #to satisfy FK contraints when deleting Environments
+      hostgroups(:inherited).destroy # needs to be deleted first, since it has ancestry
+      Hostgroup.destroy_all # to satisfy FK contraints when deleting Environments
       Environment.destroy_all
     end
 

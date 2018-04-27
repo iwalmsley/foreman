@@ -18,10 +18,10 @@ module Foreman
 
       def process_role(name, permissions)
         role = Role.find_by :name => name
-        if role && role.origin && role.permission_diff(permissions).present?
+        if role&.origin && role.permission_diff(permissions).present?
           return update_plugin_role_permissions role, permissions
         end
-        if role && role.permission_diff(permissions).empty?
+        if role&.permission_diff(permissions)&.empty?
           role.update_attribute :origin, @plugin_id if role.origin.empty?
           return role
         end
@@ -52,7 +52,7 @@ module Foreman
       def rename_existing(role, original_name)
         prefix = "Customized"
         role_name = generate_name prefix, original_name
-        candidate_roles = Role.where('name like ?',"#{role_name}%").order(:name => :desc)
+        candidate_roles = Role.where('name like ?', "#{role_name}%").order(:name => :desc)
         return role.update_attribute :name, role_name if candidate_roles.empty?
         last_role = candidate_roles.detect { |candidate_role| last_role_num candidate_role, role_name }
         last_num = last_role ? last_role_num(last_role, role_name) : 0

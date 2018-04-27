@@ -1,10 +1,10 @@
 class LookupValue < ApplicationRecord
+  audited :associated_with => :lookup_key
   include Authorizable
   include PuppetLookupValueExtensions
   include HiddenValue
 
   validates_lengths_from_database
-  audited :associated_with => :lookup_key
   delegate :hidden_value?, :editable_by_user?, :to => :lookup_key, :allow_nil => true
 
   belongs_to :lookup_key
@@ -45,7 +45,7 @@ class LookupValue < ApplicationRecord
   end
 
   def value_before_type_cast
-    return read_attribute(:value) if errors[:value].present?
+    return self[:value] if errors[:value].present?
     return self.value if lookup_key.nil? || value.contains_erb?
     lookup_key.value_before_type_cast self.value
   end
@@ -64,9 +64,9 @@ class LookupValue < ApplicationRecord
 
   private
 
-  #TODO check multi match with matchers that have space (hostgroup = web servers,environment = production)
+  # TODO check multi match with matchers that have space (hostgroup = web servers,environment = production)
   def sanitize_match
-    self.match = match.split(LookupKey::KEY_DELM).map {|s| s.split(LookupKey::EQ_DELM).map(&:strip).join(LookupKey::EQ_DELM)}.join(LookupKey::KEY_DELM) unless match.blank?
+    self.match = match.split(LookupKey::KEY_DELM).map {|s| s.split(LookupKey::EQ_DELM).map(&:strip).join(LookupKey::EQ_DELM)}.join(LookupKey::KEY_DELM) if match.present?
   end
 
   def validate_and_cast_value

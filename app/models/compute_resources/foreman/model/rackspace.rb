@@ -69,7 +69,7 @@ module Foreman::Model
 
     def destroy_vm(uuid)
       vm = find_vm_by_uuid(uuid)
-      vm.destroy if vm
+      vm&.destroy
       true
     end
 
@@ -108,7 +108,7 @@ module Foreman::Model
     end
 
     def vm_instance_defaults
-      #256 server
+      # 256 server
       super.merge(
         :flavor_id => 1,
         :config_drive => true

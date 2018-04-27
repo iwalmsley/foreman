@@ -128,11 +128,41 @@ class FacetTest < ActiveSupport::TestCase
     test 'facets do not get created for nil attributes and viceversa' do
       saved_host = FactoryBot.build(:host)
 
-      saved_host.update_attributes({'test_facet_attributes' => { 'my_attribute' => nil}})
+      saved_host.update({'test_facet_attributes' => { 'my_attribute' => nil}})
       assert_nil saved_host.test_facet
 
-      saved_host.update_attributes({'test_facet_attributes' => { 'my_attribute' => "val"}})
+      saved_host.update({'test_facet_attributes' => { 'my_attribute' => "val"}})
       assert_not_nil saved_host.test_facet
+    end
+
+    test 'facet is not removed when associated host is deleted' do
+      as_admin do
+        saved_host = FactoryBot.create(:host)
+        facet = saved_host.build_test_facet
+        saved_host.save!
+        assert facet.id
+        saved_host.destroy!
+        assert TestFacet.find_by(id: facet.id)
+      end
+    end
+  end
+
+  context 'managed host facet dependent destroy behavior' do
+    setup do
+      Facets.register TestFacet do
+        set_dependent_action :destroy
+      end
+    end
+
+    test 'facet is removed when associated host is deleted' do
+      as_admin do
+        saved_host = FactoryBot.create(:host)
+        facet = saved_host.build_test_facet
+        saved_host.save!
+        assert facet.id
+        saved_host.destroy!
+        refute TestFacet.find_by(id: facet.id)
+      end
     end
   end
 
@@ -142,7 +172,7 @@ class FacetTest < ActiveSupport::TestCase
     end
 
     test 'facet can be registered more than once' do
-      #register facet twice
+      # register facet twice
       Facets.register TestFacet
       Facets.register TestFacet
 

@@ -16,9 +16,28 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 class AuthSource < ApplicationRecord
-  include Authorizable
-
   audited
+  include Authorizable
+  scoped_search :on => :name, :complete_value => :true
+
+  has_many Taxonomix::TAXONOMY_JOIN_TABLE, :dependent => :destroy, :as => :taxable
+  has_many :locations, -> { where(:type => 'Location') },
+           :through => Taxonomix::TAXONOMY_JOIN_TABLE, :source => :taxonomy,
+           :validate => false
+  has_many :organizations, -> { where(:type => 'Organization') },
+           :through => Taxonomix::TAXONOMY_JOIN_TABLE, :source => :taxonomy,
+           :validate => false
+
+  scoped_search :relation => :locations, :on => :name, :rename => :location, :complete_value => true, :only_explicit => true
+  scoped_search :relation => :locations, :on => :id, :rename => :location_id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
+  scoped_search :relation => :organizations, :on => :name, :rename => :organization, :complete_value => true, :only_explicit => true
+  scoped_search :relation => :organizations, :on => :id, :rename => :organization_id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
+
+  scoped_search :on => :name, :complete_value => :true
+
+  # audited gem uses class variable for audied_options so once child class define auditing of these associations
+  # other auth sources definitions start failing, since organization_ids_changed? method is undefined there
+  audit_associations :organizations, :locations
 
   validates_lengths_from_database :except => [:name, :account_password, :host, :attr_login, :attr_firstname, :attr_lastname, :attr_mail]
   before_destroy EnsureNotUsedBy.new(:users)
@@ -27,8 +46,8 @@ class AuthSource < ApplicationRecord
 
   validates :name, :presence => true, :uniqueness => true, :length => { :maximum => 60 }
 
-  scope :non_internal, -> { where("type NOT IN (?)", ['AuthSourceInternal', 'AuthSourceHidden']) }
-  scope :except_hidden, -> { where('type <> ?', 'AuthSourceHidden') }
+  scope :non_internal, -> { where("auth_sources.type NOT IN (?)", ['AuthSourceInternal', 'AuthSourceHidden']) }
+  scope :except_hidden, -> { where('auth_sources.type <> ?', 'AuthSourceHidden') }
 
   def authenticate(login, password)
   end
@@ -46,7 +65,7 @@ class AuthSource < ApplicationRecord
       return nil
     end
 
-    kind = type_before_type_cast.sub("AuthSource","")
+    kind = type_before_type_cast.sub("AuthSource", "")
     "#{kind.upcase}-#{name}" if name
   end
 

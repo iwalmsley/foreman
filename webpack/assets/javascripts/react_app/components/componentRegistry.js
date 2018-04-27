@@ -1,6 +1,6 @@
 import React from 'react';
 
-import PieChart from './common/charts/PieChart/';
+import DonutChart from './common/charts/DonutChart';
 import StatisticsChartsList from './statistics/StatisticsChartsList';
 import PowerStatus from './hosts/powerStatus/';
 import NotificationContainer from './notifications/';
@@ -8,6 +8,7 @@ import ToastsList from './toastNotifications/';
 import StorageContainer from './hosts/storage/vmware/';
 import BookmarkContainer from './bookmarks';
 import PasswordStrength from './user/passwordStrength/';
+import BreadcrumbBar from './BreadcrumbBar';
 
 const componentRegistry = {
   registry: {},
@@ -57,13 +58,14 @@ const componentRegistry = {
 
 const coreComponets = [
   { name: 'BookmarkContainer', type: BookmarkContainer },
-  { name: 'PieChart', type: PieChart },
+  { name: 'DonutChart', type: DonutChart },
   { name: 'StatisticsChartsList', type: StatisticsChartsList },
   { name: 'PowerStatus', type: PowerStatus },
   { name: 'NotificationContainer', type: NotificationContainer },
   { name: 'ToastNotifications', type: ToastsList, data: false },
   { name: 'StorageContainer', type: StorageContainer },
   { name: 'PasswordStrength', type: PasswordStrength },
+  { name: 'BreadcrumbBar', type: BreadcrumbBar },
 ];
 
 componentRegistry.registerMultiple(coreComponets);

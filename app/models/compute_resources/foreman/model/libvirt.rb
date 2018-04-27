@@ -13,7 +13,7 @@ module Foreman::Model
 
     # Some getters/setters for the attrs Hash
     def display_type
-      self.attrs[:display].present? ? self.attrs[:display] : 'vnc'
+      self.attrs[:display].presence || 'vnc'
     end
 
     def display_type=(display)
@@ -154,7 +154,7 @@ module Foreman::Model
     rescue Fog::Errors::Error => e
       Foreman::Logging.exception("Unhandled Libvirt error", e)
       begin
-        destroy_vm vm.id if vm && vm.id
+        destroy_vm vm.id if vm&.id
       rescue Fog::Errors::Error => destroy_e
         Foreman::Logging.exception("Libvirt destroy failed for #{vm.id}", destroy_e)
       end
@@ -215,7 +215,7 @@ module Foreman::Model
 
     def vm_instance_defaults
       super.merge(
-        :memory     => 768.megabytes,
+        :memory     => 2048.megabytes,
         :nics       => [new_nic],
         :volumes    => [new_volume].compact,
         :display    => { :type     => display_type,

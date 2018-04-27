@@ -93,6 +93,8 @@ class NicTest < ActiveSupport::TestCase
     assert_equal subnet6.network, interface.network6
     assert_equal subnet.vlanid, interface.vlanid
     assert_equal 42, interface.vlanid
+    assert_equal 1496, interface.mtu
+    assert_equal subnet.mtu, interface.mtu
   end
 
   test "should delegate subnet6 attributes if subnet is nil" do
@@ -108,8 +110,10 @@ class NicTest < ActiveSupport::TestCase
                                   :name => "a" + FactoryBot.create(:host).name,
                                   :domain => domain)
     assert_equal subnet6.vlanid, interface.vlanid
+    assert_equal subnet6.mtu, interface.mtu
     assert_equal subnet6.network, interface.network6
     assert_equal 44, interface.vlanid
+    assert_equal 9000, interface.mtu
   end
 
   test "should reject subnet with mismatched taxonomy in host" do
@@ -122,10 +126,10 @@ class NicTest < ActiveSupport::TestCase
       subnet6 = subnets(:six)
       host = FactoryBot.build(:host)
 
-      subnet_list = subnet.send((taxonomy.to_s.pluralize).to_s)
+      subnet_list = subnet.send(taxonomy.to_s.pluralize.to_s)
       subnet_list << tax_object1
 
-      subnet6_list = subnet6.send((taxonomy.to_s.pluralize).to_s)
+      subnet6_list = subnet6.send(taxonomy.to_s.pluralize.to_s)
       subnet6_list << tax_object1
 
       host.send("#{taxonomy}=", tax_object2)
@@ -135,8 +139,8 @@ class NicTest < ActiveSupport::TestCase
       nic.subnet6 = subnet6
 
       refute nic.valid?, "Can't be valid with mismatching taxonomy: #{nic.errors.messages}"
-      assert_includes nic.errors.keys, :subnet
-      assert_includes nic.errors.keys, :subnet6
+      assert_includes nic.errors.keys, :subnet_id
+      assert_includes nic.errors.keys, :subnet6_id
     end
   end
 
@@ -429,22 +433,22 @@ class NicTest < ActiveSupport::TestCase
       assert_nil Nic::Base.type_by_name("DisallowedTestNic")
     end
 
-    test 'fqdn_changed? should be true if name changes' do
-      @nic.stubs(:name_changed?).returns(true)
-      @nic.stubs(:domain_id_changed?).returns(false)
-      assert @nic.fqdn_changed?
+    test 'saved_change_to_fqdn? should be true if name changes' do
+      @nic.stubs(:saved_change_to_name?).returns(true)
+      @nic.stubs(:saved_change_to_domain_id?).returns(false)
+      assert @nic.saved_change_to_fqdn?
     end
 
-    test 'fqdn_changed? should be true if domain changes' do
-      @nic.stubs(:name_changed?).returns(false)
-      @nic.stubs(:domain_id_changed?).returns(true)
-      assert @nic.fqdn_changed?
+    test 'saved_change_to_fqdn? should be true if domain changes' do
+      @nic.stubs(:saved_change_to_name?).returns(false)
+      @nic.stubs(:saved_change_to_domain_id?).returns(true)
+      assert @nic.saved_change_to_fqdn?
     end
 
-    test 'fqdn_changed? should be true if name and domain change' do
-      @nic.stubs(:name_changed?).returns(true)
-      @nic.stubs(:domain_id_changed?).returns(true)
-      assert @nic.fqdn_changed?
+    test 'saved_change_to_fqdn? should be true if name and domain change' do
+      @nic.stubs(:saved_change_to_name?).returns(true)
+      @nic.stubs(:saved_change_to_domain_id?).returns(true)
+      assert @nic.saved_change_to_fqdn?
     end
   end
 
@@ -490,12 +494,63 @@ class NicTest < ActiveSupport::TestCase
     interface = FactoryBot.create(:nic_managed, :host => host, :name => 'nick')
     # no domain
     assert_equal(interface.name, 'nick')
-    interface.update_attributes(:domain_id => existing_domain.id)
+    interface.update(:domain_id => existing_domain.id)
     name_should_be = "nick.#{existing_domain.name}"
     assert_equal(name_should_be, interface.name)
     new_domain = FactoryBot.create(:domain)
-    interface.update_attributes(:domain_id => new_domain.id)
+    interface.update(:domain_id => new_domain.id)
     name_should_change_to = "nick.#{new_domain.name}"
     assert_equal(name_should_change_to, interface.name)
+  end
+
+  test 'nic MTU fact should override subnet MTU' do
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :mtu => 9000)
+    interface = FactoryBot.build(:nic_managed, :name => 'nick', :subnet => subnet)
+    interface.attrs['mtu'] = 1500
+    assert_equal 1500, interface.mtu
+  end
+
+  test 'nic with both subnet and subnet6 should be valid if VLAN ID is consistent between subnets' do
+    host = FactoryBot.create(:host)
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :vlanid => 14)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => 14)
+    interface = FactoryBot.create(:nic_managed, :host => host, :name => 'nick', :subnet => subnet, :subnet6 => subnet6)
+    assert_valid interface
+  end
+
+  test 'nic with both subnet and subnet6 should not be valid if VLAN ID mismatch between subnets' do
+    host = FactoryBot.create(:host)
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :vlanid => 3)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => 4)
+    interface = FactoryBot.build(:nic_managed, :host => host, :name => 'nick', :subnet => subnet, :subnet6 => subnet6)
+    refute_valid interface
+    assert_includes interface.errors.keys, :subnet_id
+
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :vlanid => nil)
+    interface = FactoryBot.build(:nic_managed, :host => host, :name => 'nick', :subnet => subnet, :subnet6 => subnet6)
+    refute_valid interface
+    assert_includes interface.errors.keys, :subnet_id
+  end
+
+  test 'nic with both subnet and subnet6 should be valid if MTU is consistent between subnets' do
+    host = FactoryBot.create(:host)
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :mtu => 1496)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :mtu => 1496)
+    interface = FactoryBot.build(:nic_managed, :host => host, :name => 'nick', :subnet => subnet, :subnet6 => subnet6)
+    assert_valid interface
+  end
+
+  test 'nic with both subnet and subnet6 should not be valid if MTU mismatch between subnets' do
+    host = FactoryBot.create(:host)
+    domain = FactoryBot.create(:domain)
+    subnet = FactoryBot.create(:subnet_ipv4, :domains => [domain], :mtu => 1496)
+    subnet6 = FactoryBot.create(:subnet_ipv6, :domains => [domain], :mtu => 1500)
+    interface = FactoryBot.build(:nic_managed, :host => host, :name => 'nick', :subnet => subnet, :subnet6 => subnet6)
+    refute_valid interface
+    assert_includes interface.errors.keys, :subnet_id
   end
 end

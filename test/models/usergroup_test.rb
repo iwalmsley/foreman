@@ -1,5 +1,13 @@
 require 'test_helper'
 
+def valid_names
+  if ActiveRecord::Base.connection.adapter_name.downcase =~ /mysql/
+    RFauxFactory.gen_strings(1..230, :exclude => [:utf8]).values
+  else
+    valid_name_list
+  end
+end
+
 class UsergroupTest < ActiveSupport::TestCase
   setup do
     User.current = users :admin
@@ -10,7 +18,7 @@ class UsergroupTest < ActiveSupport::TestCase
   end
 
   test "name is unique across user as well as usergroup" do
-    User.expects(:where).with(:login => 'usergroup1').returns(['fakeuser'])
+    User.expects(:find_by).with(:login => 'usergroup1').returns(['fakeuser'])
     usergroup = FactoryBot.build_stubbed(:usergroup, :name => 'usergroup1')
     refute usergroup.valid?
   end
@@ -22,6 +30,55 @@ class UsergroupTest < ActiveSupport::TestCase
   should validate_presence_of(:name)
   should have_many(:usergroup_members).dependent(:destroy)
   should have_many(:users).dependent(:destroy)
+  should_not allow_value(*invalid_name_list).for(:name)
+  should allow_value(*valid_name_list).for(:name)
+
+  test 'should not update with multiple invalid names' do
+    usergroup = FactoryBot.create(:usergroup)
+    invalid_name_list.each do |name|
+      usergroup.name = name
+      refute usergroup.valid?, "Can update usergroup with invalid name #{name}"
+      assert_includes usergroup.errors.keys, :name
+    end
+  end
+
+  test 'should update with multiple valid names' do
+    usergroup = FactoryBot.create(:usergroup)
+    valid_name_list.each do |name|
+      usergroup.name = name
+      assert usergroup.valid?, "Can't update usergroup with valid name #{name}"
+    end
+  end
+
+  test 'should create with valid role' do
+    valid_names.each do |name|
+      role = FactoryBot.create(:role, :name => name)
+      usergroup = FactoryBot.build(:usergroup, :role_ids => [role.id])
+      assert usergroup.valid?, "Can't create usergroup with valid role #{role}"
+      assert_equal 1, usergroup.roles.length
+      assert_equal name, usergroup.roles.first.name
+    end
+  end
+
+  test 'should create with valid user' do
+    RFauxFactory.gen_strings(1..50, exclude: [:html, :punctuation, :cyrillic, :utf8]).values.each do |login|
+      user = FactoryBot.create(:user, :login => login)
+      usergroup = FactoryBot.build(:usergroup, :user_ids => [user.id])
+      assert usergroup.valid?, "Can't create usergroup with valid user #{user}"
+      assert_equal 1, usergroup.users.length
+      assert_equal login, usergroup.users.first.name
+    end
+  end
+
+  test 'should create with valid usergroup' do
+    valid_names.each do |name|
+      sub_usergroup = FactoryBot.create(:usergroup, :name => name)
+      usergroup = FactoryBot.build(:usergroup, :usergroup_ids => [sub_usergroup.id])
+      assert usergroup.valid?, "Can't create usergroup with valid usergroup #{sub_usergroup}"
+      assert_equal 1, usergroup.usergroups.length
+      assert_equal name, usergroup.usergroups.first.name
+    end
+  end
 
   context 'Jail' do
     test 'should allow methods' do
@@ -82,7 +139,7 @@ class UsergroupTest < ActiveSupport::TestCase
     disable_orchestration
     @ug1 = Usergroup.where(:name => "ug1").first_or_create
     @h1  = FactoryBot.create(:host)
-    @h1.update_attributes :owner => @ug1
+    @h1.update :owner => @ug1
     @ug1.destroy
     assert_equal @ug1.errors.full_messages[0], "ug1 is used by #{@h1}"
   end
@@ -106,7 +163,7 @@ class UsergroupTest < ActiveSupport::TestCase
     record.roles = [one, two]
     assert_equal 3, user.reload.cached_user_roles.size
 
-    assert record.update_attributes(:role_ids => [ two.id ])
+    assert record.update(:role_ids => [ two.id ])
     assert_equal 2, user.reload.cached_user_roles.size
 
     record.role_ids = [ ]
@@ -267,5 +324,89 @@ class UsergroupTest < ActiveSupport::TestCase
 
     groups = Usergroup.search_for("role = #{role.name}")
     assert (groups.include? usergroup)
+  end
+
+  context 'audit usergroup' do
+    setup do
+      @usergroup = FactoryBot.create(:usergroup, :with_auditing)
+    end
+
+    context 'child usergroups' do
+      setup do
+        @child_usergroup = FactoryBot.create(:usergroup)
+        @usergroup.usergroup_ids = [@child_usergroup.id]
+        @usergroup.save
+      end
+
+      test 'should audit when a child-usergroup is assigned to a parent-usergroup' do
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:usergroups]
+        assert audited_changes, 'No audits found for usergroups'
+        assert_empty audited_changes.first
+        assert_equal @child_usergroup.name, audited_changes.last
+      end
+
+      test 'should audit when a child-usergroup is removed/de-assigned from a parent-usergroup' do
+        @usergroup.usergroup_ids = []
+        @usergroup.save
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:usergroups]
+        assert audited_changes, 'No audits found for usergroups'
+        assert_equal @child_usergroup.name, audited_changes.first
+        assert_empty audited_changes.last
+      end
+    end
+
+    context 'roles' do
+      setup do
+        @role = FactoryBot.create(:role)
+        @usergroup.role_ids = [@role.id]
+        @usergroup.save
+      end
+
+      test 'should audit when a role is assigned to a usergroup' do
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:roles]
+        assert audited_changes, 'No audits found for user-roles'
+        assert_empty audited_changes.first
+        assert_equal @role.name, audited_changes.last
+      end
+
+      test 'should audit when a role is removed/de-assigned from a usergroup' do
+        @usergroup.role_ids = []
+        @usergroup.save
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:roles]
+        assert audited_changes, 'No audits found for usergroup-roles'
+        assert_equal @role.name, audited_changes.first
+        assert_empty audited_changes.last
+      end
+    end
+
+    context 'users' do
+      setup do
+        @user = users :one # FactoryBot.create(:user)
+        @usergroup.user_ids = [@user.id]
+        @usergroup.save
+      end
+
+      test 'should audit when a user is assigned to a usergroup' do
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:users]
+        assert audited_changes, 'No audits found for users'
+        assert_empty audited_changes.first
+        assert_equal @user.name, audited_changes.last
+      end
+
+      test 'should audit when a user is removed/de-assigned from a usergroup' do
+        @usergroup.user_ids = []
+        @usergroup.save
+        recent_audit = @usergroup.audits.last
+        audited_changes = recent_audit.audited_changes[:users]
+        assert audited_changes, 'No audits found for users'
+        assert_equal @user.name, audited_changes.first
+        assert_empty audited_changes.last
+      end
+    end
   end
 end

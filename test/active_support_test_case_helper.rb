@@ -56,9 +56,6 @@ class ActiveSupport::TestCase
 
   def reset_rails_cache
     Rails.cache.clear
-  rescue Errno::ENOENT
-    # Clear on a file cache fails on a clean checkout when the cache hasn't been written to.
-    # This rescue may be removed on Rails 5 (16d7cfb fixes it).
   end
 
   # for backwards compatibility to between Minitest syntax
@@ -128,7 +125,7 @@ class ActiveSupport::TestCase
 
   # if a method receieves a block it will be yielded just before user save
   def setup_user(operation, type = "", search = nil, user = :one)
-    @one = users(user)
+    @one = user.is_a?(User) ? user : users(user)
     as_admin do
       permission = Permission.find_by_name("#{operation}_#{type}") ||
         FactoryBot.build(:permission, :name => "#{operation}_#{type}")
@@ -155,7 +152,7 @@ class ActiveSupport::TestCase
   end
 
   def self.disable_orchestration
-    #This disables the DNS/DHCP orchestration
+    # This disables the DNS/DHCP orchestration
     Resolv::DNS.any_instance.stubs(:getname).returns("foo.fqdn")
     Resolv::DNS.any_instance.stubs(:getaddress).returns("127.0.0.1")
     Resolv::DNS.any_instance.stubs(:getresources).returns([OpenStruct.new(:mname => 'foo', :name => 'bar')])
@@ -195,7 +192,7 @@ class ActiveSupport::TestCase
   def refute_with_errors(condition, model, field = nil, match = nil)
     refute condition, "#{model.inspect} errors: #{model.errors.full_messages.join(';')}"
     if field
-      model_errors = model.errors.map { |a,m| model.errors.full_message(a, m) unless field == a }.compact
+      model_errors = model.errors.map { |a, m| model.errors.full_message(a, m) unless field == a }.compact
       assert model_errors.blank?, "#{model} contains #{model_errors}, it should not contain any"
       assert model.errors[field].find { |e| e.match(match) }.present?,
         "#{field} error matching #{match} not found: #{model.errors[field].inspect}" if match
@@ -212,7 +209,7 @@ class ActiveSupport::TestCase
   alias_method :assert_not_valid, :refute_valid
 
   def with_env(values = {})
-    old_values = values.inject({}) { |ov,(key,val)| ov.update(key => ENV[key]) }
+    old_values = values.inject({}) { |ov, (key, val)| ov.update(key => ENV[key]) }
     ENV.update values
     result = yield
     ENV.update old_values
@@ -220,7 +217,7 @@ class ActiveSupport::TestCase
   end
 
   def next_mac(mac)
-    mac.tr(':','').to_i(16).succ.to_s(16).rjust(12, '0').scan(/../).join(':')
+    mac.tr(':', '').to_i(16).succ.to_s(16).rjust(12, '0').scan(/../).join(':')
   end
 
   def fake_rest_client_response(data)

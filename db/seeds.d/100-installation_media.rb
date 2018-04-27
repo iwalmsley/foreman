@@ -1,3 +1,5 @@
+organizations = Organization.unscoped.all
+locations = Location.unscoped.all
 os_suse = Operatingsystem.unscoped.where(:type => "Suse") || Operatingsystem.unscoped.where("name LIKE ?", "suse")
 
 # Installation media: default mirrors
@@ -10,11 +12,14 @@ Medium.without_auditing do
     { :name => "FreeBSD mirror",       :os_family => "Freebsd", :path => "http://ftp.freebsd.org/pub/FreeBSD/releases/$arch/$version-RELEASE/" },
     { :name => "OpenSUSE mirror",      :os_family => "Suse",    :path => "http://download.opensuse.org/distribution/leap/$version/repo/oss", :operatingsystems => os_suse },
     { :name => "Ubuntu mirror",        :os_family => "Debian",  :path => "http://archive.ubuntu.com/ubuntu" },
-    { :name => "CoreOS mirror",        :os_family => "Coreos",  :path => "http://$release.release.core-os.net" }
+    { :name => "CoreOS mirror",        :os_family => "Coreos",  :path => "http://$release.release.core-os.net" },
+    { :name => "RancherOS mirror", :os_family => "Rancheros", :path => "https://github.com/rancher/os/releases/download/v$version" }
   ].each do |input|
     next if Medium.unscoped.where(['name = ? OR path = ?', input[:name], input[:path]]).any?
     next if SeedHelper.audit_modified? Medium, input[:name]
     m = Medium.create input
+    m.organizations = organizations if SETTINGS[:organizations_enabled]
+    m.locations = locations if SETTINGS[:locations_enabled]
     raise "Unable to create medium: #{format_errors m}" if m.nil? || m.errors.any?
   end
 end

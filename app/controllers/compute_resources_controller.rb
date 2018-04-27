@@ -6,7 +6,7 @@ class ComputeResourcesController < ApplicationController
   before_action :ajax_request, :only => AJAX_REQUESTS
   before_action :find_resource, :only => [:show, :edit, :associate, :update, :destroy, :ping, :refresh_cache] + AJAX_REQUESTS
 
-  #This can happen in development when removing a plugin
+  # This can happen in development when removing a plugin
   rescue_from ActiveRecord::SubclassNotFound do |e|
     type = (e.to_s =~ /failed to locate the subclass: '((\w|::)+)'/) ? Regexp.last_match(1) : 'STI-Type'
     render :plain => (e.to_s+"<br><b>run ComputeResource.where(:type=>'#{type}').delete_all to recover.</b>").html_safe, :status=> :internal_server_error
@@ -36,6 +36,16 @@ class ComputeResourcesController < ApplicationController
       @compute_resource.valid?
       process_error
     end
+  rescue OVIRT::OvirtException => e
+    Foreman::Logging.exception("Error while creating ovirt resource", e)
+    process_error(
+      error_msg: _('Error while trying to create resource: %s') % e.message
+    )
+  rescue Fog::Errors::Error => e
+    Foreman::Logging.exception("Error while creating a resource", e)
+    process_error(
+      error_msg: _('Error while trying to create resource: %s') % e.message
+    )
   end
 
   def edit
@@ -65,11 +75,21 @@ class ComputeResourcesController < ApplicationController
   end
 
   def update
-    if @compute_resource.update_attributes(compute_resource_params)
+    if @compute_resource.update(compute_resource_params)
       process_success :success_redirect => compute_resources_path
     else
       process_error
     end
+  rescue OVIRT::OvirtException => e
+    Foreman::Logging.exception("Error while updating ovirt resource", e)
+    process_error(
+      error_msg: _('Error while trying to update resource: %s') % e.message
+    )
+  rescue Fog::Errors::Error => e
+    Foreman::Logging.exception("Error while updating resource", e)
+    process_error(
+      error_msg: _('Error while trying to update resource: %s') % e.message
+    )
   end
 
   def destroy
@@ -94,7 +114,7 @@ class ComputeResourcesController < ApplicationController
     end
   end
 
-  #ajax methods
+  # ajax methods
   def provider_selected
     @compute_resource = ComputeResource.new_provider :provider => params[:provider]
     render :partial => "compute_resources/form", :locals => { :compute_resource => @compute_resource }
@@ -110,7 +130,7 @@ class ComputeResourcesController < ApplicationController
     # cr_id is posted from AJAX function. cr_id is nil if new
     if params[:cr_id].present?
       @compute_resource = ComputeResource.authorized(:edit_compute_resources).find(params[:cr_id])
-      @compute_resource.attributes = compute_resource_params.reject { |k,v| k == :password && v.blank? }
+      @compute_resource.attributes = compute_resource_params.reject { |k, v| k == :password && v.blank? }
     else
       @compute_resource = ComputeResource.new_provider(compute_resource_params)
     end
@@ -158,9 +178,5 @@ class ComputeResourcesController < ApplicationController
       else
         super
     end
-  end
-
-  def two_pane?
-    super && params[:action] != 'show'
   end
 end

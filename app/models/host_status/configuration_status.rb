@@ -14,10 +14,23 @@ module HostStatus
     end
 
     def out_of_sync?
-      if (host && !host.enabled?) || no_reports?
+      if (host && !host.enabled?) || no_reports? || out_of_sync_disabled?
         false
       else
-        !reported_at.nil? && reported_at < (Time.now.utc - (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes)
+        !reported_at.nil? && reported_at < (Time.now.utc - expected_report_interval)
+      end
+    end
+
+    def expected_report_interval
+      (reported_origin_interval + default_report_interval).minutes
+    end
+
+    def reported_origin_interval
+      if last_report.origin &&
+         (interval = Setting[:"#{last_report.origin.downcase}_interval"])
+        interval.to_i
+      else
+        default_report_interval
       end
     end
 
@@ -110,6 +123,18 @@ module HostStatus
 
     def calculator
       ConfigReportStatusCalculator.new(:bit_field => status)
+    end
+
+    def default_report_interval
+      Setting[:outofsync_interval]
+    end
+
+    def out_of_sync_disabled?
+      if last_report.origin
+        Setting[:"#{last_report.origin.downcase}_out_of_sync_disabled"]
+      else
+        false
+      end
     end
   end
 end

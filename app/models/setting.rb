@@ -1,23 +1,24 @@
 require 'resolv'
 
 class Setting < ApplicationRecord
+  audited :except => [:name, :description, :category, :settings_type, :full_name, :encrypted], :on => [:update]
   extend FriendlyId
   friendly_id :name
   include ActiveModel::Validations
   include EncryptValue
   self.inheritance_column = 'category'
 
-  TYPES= %w{ integer boolean hash array string }
-  FROZEN_ATTRS = %w{ name category full_name }
-  NONZERO_ATTRS = %w{ puppet_interval idle_timeout entries_per_page max_trend outofsync_interval }
-  BLANK_ATTRS = %w{ host_owner trusted_puppetmaster_hosts login_delegation_logout_url authorize_login_delegation_auth_source_user_autocreate root_pass default_location default_organization websockets_ssl_key websockets_ssl_cert oauth_consumer_key oauth_consumer_secret login_text
+  TYPES= %w{integer boolean hash array string}
+  FROZEN_ATTRS = %w{name category full_name}
+  NONZERO_ATTRS = %w{puppet_interval idle_timeout entries_per_page max_trend outofsync_interval}
+  BLANK_ATTRS = %w{ host_owner trusted_hosts login_delegation_logout_url authorize_login_delegation_auth_source_user_autocreate root_pass default_location default_organization websockets_ssl_key websockets_ssl_cert oauth_consumer_key oauth_consumer_secret login_text
                     smtp_address smtp_domain smtp_user_name smtp_password smtp_openssl_verify_mode smtp_authentication sendmail_arguments sendmail_location http_proxy http_proxy_except_list}
-  ARRAY_HOSTNAMES = %w{ trusted_puppetmaster_hosts }
-  URI_ATTRS = %w{ foreman_url unattended_url }
-  URI_BLANK_ATTRS = %w{ login_delegation_logout_url }
-  IP_ATTRS = %w{ libvirt_default_console_address }
-  REGEXP_ATTRS = %w{ remote_addr }
-  EMAIL_ATTRS = %w{ administrator email_reply_address }
+  ARRAY_HOSTNAMES = %w{trusted_hosts}
+  URI_ATTRS = %w{foreman_url unattended_url}
+  URI_BLANK_ATTRS = %w{login_delegation_logout_url}
+  IP_ATTRS = %w{libvirt_default_console_address}
+  REGEXP_ATTRS = %w{remote_addr}
+  EMAIL_ATTRS = %w{administrator email_reply_address}
   NOT_STRIPPED = %w{}
 
   class ValueValidator < ActiveModel::Validator
@@ -28,15 +29,14 @@ class Setting < ApplicationRecord
 
   validates_lengths_from_database
   # audit the changes to this model
-  audited :except => [:name, :description, :category, :settings_type, :full_name, :encrypted], :on => [:update]
 
   validates :name, :presence => true, :uniqueness => true
   validates :description, :presence => true
   validates :default, :presence => true, :unless => Proc.new {|s| s.settings_type == "boolean" || BLANK_ATTRS.include?(s.name) }
-  validates :default, :inclusion => {:in => [true,false]}, :if => Proc.new {|s| s.settings_type == "boolean"}
+  validates :default, :inclusion => {:in => [true, false]}, :if => Proc.new {|s| s.settings_type == "boolean"}
   validates :value, :numericality => true, :length => {:maximum => 8}, :if => Proc.new {|s| s.settings_type == "integer"}
   validates :value, :numericality => {:greater_than => 0}, :if => Proc.new {|s| NONZERO_ATTRS.include?(s.name) }
-  validates :value, :inclusion => {:in => [true,false]}, :if => Proc.new {|s| s.settings_type == "boolean"}
+  validates :value, :inclusion => {:in => [true, false]}, :if => Proc.new {|s| s.settings_type == "boolean"}
   validates :value, :presence => true, :if => Proc.new {|s| s.settings_type == "array" && !BLANK_ATTRS.include?(s.name) }
   validates :settings_type, :inclusion => {:in => TYPES}, :allow_nil => true, :allow_blank => true
   validates :value, :url_schema => ['http', 'https'], :if => Proc.new {|s| URI_ATTRS.include?(s.name) }
@@ -92,9 +92,10 @@ class Setting < ApplicationRecord
 
   def self.[](name)
     name = name.to_s
+    name = deprecation_check(name)
     cache_value = Setting.cache.read(name)
     if cache_value.nil?
-      value = where(:name => name).first.try(:value)
+      value = find_by(:name => name).try(:value)
       Setting.cache.write(name, value)
       return value
     else
@@ -104,9 +105,19 @@ class Setting < ApplicationRecord
 
   def self.[]=(name, value)
     name   = name.to_s
+    name   = deprecation_check(name)
     record = where(:name => name).first_or_create
     record.value = value
     record.save!
+  end
+
+  def self.deprecation_check(name)
+    return name unless name == 'trusted_puppetmaster_hosts'
+    Foreman::Deprecation.deprecation_warning(
+      '1.19',
+      'trusted_puppetmaster_hosts is deprecated, please use trusted_hosts'
+    )
+    'trusted_hosts'
   end
 
   def value=(v)
@@ -114,29 +125,29 @@ class Setting < ApplicationRecord
     # the has_attribute is for enabling DB migrations on older versions
     if has_attribute?(:encrypted) && encrypted
       # Don't re-write the attribute if the current encrypted value is identical to the new one
-      current_value = read_attribute(:value)
+      current_value = self[:value]
       unless is_decryptable?(current_value) && decrypt_field(current_value) == v
-        write_attribute :value, encrypt_field(v)
+        self[:value] = encrypt_field(v)
       end
     else
-      write_attribute :value, v
+      self[:value] = v
     end
   end
 
   def value
-    v = read_attribute(:value)
+    v = self[:value]
     v = decrypt_field(v)
     v.nil? ? default : YAML.load(v)
   end
   alias_method :value_before_type_cast, :value
 
   def default
-    d = read_attribute(:default)
+    d = self[:default]
     d.nil? ? nil : YAML.load(d)
   end
 
   def default=(v)
-    write_attribute :default, v.to_yaml
+    self[:default] = v.to_yaml
   end
   alias_method :default_before_type_cast, :default
 
@@ -174,7 +185,7 @@ class Setting < ApplicationRecord
       end
 
     when "string", nil
-      #string is taken as default setting type for parsing
+      # string is taken as default setting type for parsing
       self.value = NOT_STRIPPED.include?(name) ? val : val.to_s.strip
 
     when "hash"
@@ -232,9 +243,9 @@ class Setting < ApplicationRecord
   def self.create_existing(s, opts)
     bypass_readonly(s) do
       attrs = column_check([:default, :description, :full_name, :encrypted])
-      to_update = Hash[opts.select { |k,v| attrs.include? k }]
+      to_update = Hash[opts.select { |k, v| attrs.include? k }]
       to_update[:value] = readonly_value(s.name.to_sym) if s.has_readonly_value?
-      s.update_attributes(to_update)
+      s.update(to_update)
       s.update_column :category, opts[:category] if s.category != opts[:category]
       s.update_column :full_name, opts[:full_name] unless column_check([:full_name]).empty?
       raw_value = s.read_attribute(:value)
@@ -321,7 +332,7 @@ class Setting < ApplicationRecord
 
   def validate_frozen_attributes
     return true if new_record?
-    changed_attributes.each do |c,old|
+    changed_attributes.each do |c, old|
       # Allow settings_type to change at first (from nil) since it gets populated during validation
       if FROZEN_ATTRS.include?(c.to_s) || (c.to_s == :settings_type && !old.nil?)
         errors.add(c, _("is not allowed to change"))
@@ -332,8 +343,8 @@ class Setting < ApplicationRecord
   end
 
   def clear_value_when_default
-    if read_attribute(:value) == read_attribute(:default)
-      write_attribute(:value, nil)
+    if self[:value] == self[:default]
+      self[:value] = nil
     end
   end
 

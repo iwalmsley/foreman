@@ -21,6 +21,10 @@ FactoryBot.define do
       association :dns, :factory => :dns_smart_proxy
     end
 
+    trait :template do
+      association :template, :factory => :template_smart_proxy
+    end
+
     trait :with_domains do
       transient do
         domains_count 2
@@ -51,7 +55,7 @@ FactoryBot.define do
       end
 
       trait :with_parameter do
-        after(:create) do |subnet,evaluator|
+        after(:create) do |subnet, evaluator|
           FactoryBot.create(:subnet_parameter, :subnet => subnet)
         end
       end

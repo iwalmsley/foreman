@@ -25,6 +25,7 @@ class Taxonomy < ApplicationRecord
   has_many :hostgroups, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Hostgroup'
   has_many :environments, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Environment'
   has_many :subnets, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Subnet'
+  has_many :auth_sources, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'AuthSource'
 
   validate :check_for_orphans, :unless => Proc.new {|t| t.new_record?}
   # the condition for parent_id != 0 is required because of our tests, should validate macros fill in attribute with values and it set 0 to this one
@@ -151,11 +152,12 @@ class Taxonomy < ApplicationRecord
     new.realms            = realms
     new.media             = media
     new.hostgroups        = hostgroups
+    new.auth_sources      = auth_sources
     new
   end
 
-  # overwrite *_ids since need to check if ignored? - don't overwrite location_ids and organizations_ids since these aren't ignored
-  (TaxHost::HASH_KEYS - [:location_ids, :organizations_ids]).each do |key|
+  # overwrite *_ids since need to check if ignored? - don't overwrite location_ids and organization_ids since these aren't ignored
+  (TaxHost::HASH_KEYS - [:location_ids, :organization_ids]).each do |key|
     # def domain_ids
     #  if ignore?("Domain")
     #   Domain.pluck(:id)
@@ -214,6 +216,14 @@ class Taxonomy < ApplicationRecord
 
   def notification_recipients_ids
     self.subtree.flat_map(&:users).map(&:id).uniq
+  end
+
+  # note - this method used by before_destroy callbacks in extension files from plugins
+  # audits for 'destroy' action on resources lead to taxable_taxonomies records.
+  # This will check if any taxable_taxonomies records present and apply destroy_all
+  # so that it nullifies all associated audit records
+  def destroy_taxable_taxonomies
+    TaxableTaxonomy.where(taxonomy_id: self.id).destroy_all
   end
 
   private

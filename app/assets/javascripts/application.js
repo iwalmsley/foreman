@@ -26,6 +26,9 @@ $(document).on("page:fetch", function() {
 $(document).on("page:change", tfm.tools.hideSpinner)
 
 $(function() {
+  // turbolinks classic cached pages have an issue with react integration
+  // https://github.com/reactjs/react-rails/blob/18a4f5b4c44ab58ad0dd77c5e9315e3cb0edba1f/react_ujs/src/events/turbolinksClassicDeprecated.js#L4
+  Turbolinks.pagesCached(0);
   tfm.nav.init();
   $(document).trigger('ContentLoad');
 });
@@ -244,11 +247,11 @@ function filter_by_level(item){
 }
 
 function auth_source_selected(){
-  var auth_source_id = $('#user_auth_source_id').val();
-  if (auth_source_id == '') {
-     $("#password").hide();
-  } else {
+  var auth_source_id = $('#user_auth_source_id option:selected').text();
+  if (auth_source_id == 'INTERNAL') {
      $("#password").show();
+  } else {
+     $("#password").hide();
   }
 }
 

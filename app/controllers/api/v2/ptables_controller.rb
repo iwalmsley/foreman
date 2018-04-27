@@ -2,6 +2,7 @@ module Api
   module V2
     class PtablesController < V2::BaseController
       include Foreman::Controller::Parameters::Ptable
+      include Foreman::Controller::TemplateImport
 
       wrap_parameters :ptable, :include => ptable_params_filter.accessible_attributes(parameter_filter_context)
 
@@ -50,6 +51,19 @@ module Api
         process_response @ptable.save
       end
 
+      api :POST, "/ptables/import", N_("Import a provisioning template")
+      param :ptable, Hash, :required => true, :action_aware => true do
+        param :name, String, :required => true, :desc => N_("template name")
+        param :template, String, :required => true, :desc => N_("template contents including metadata")
+        param_group :taxonomies, ::Api::V2::BaseController
+      end
+      param_group :template_import_options, ::Api::V2::BaseController
+
+      def import
+        @ptable = Ptable.import!(*import_attrs_for(:ptable))
+        process_response @ptable
+      end
+
       api :GET, "/ptables/revision"
       param :version, String, :desc => N_("template version")
 
@@ -63,7 +77,7 @@ module Api
       param_group :ptable
 
       def update
-        process_response @ptable.update_attributes(ptable_params)
+        process_response @ptable.update(ptable_params)
       end
 
       api :DELETE, "/ptables/:id/", N_("Delete a partition table")
@@ -112,7 +126,7 @@ module Api
 
       def action_permission
         case params[:action]
-          when 'clone'
+          when 'clone', 'import'
             'create'
           when 'export'
             'view'

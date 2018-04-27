@@ -37,7 +37,7 @@ module Api
       param :location_id, String, :desc => N_("ID of location")
       param :organization_id, String, :desc => N_("ID of organization")
       param :environment_id, String, :desc => N_("ID of environment")
-      param :include, Array, :in => ['parameters', 'all_parameters'], :desc => N_("Array of extra information types to include")
+      param :include, ['parameters', 'all_parameters'], :desc => N_("Array of extra information types to include")
       param_group :search_and_pagination, ::Api::V2::BaseController
       add_scoped_search_description_for(Host)
 
@@ -102,7 +102,7 @@ module Api
           end
           param :build, :bool
           param :enabled, :bool, :desc => N_("Include this host within Foreman reporting")
-          param :provision_method, String, :desc => N_("The method used to provision the host. Possible provision_methods may be %{provision_methods}") # values are defined in apipie initializer
+          param :provision_method, Host::Managed.provision_methods.keys, :desc => N_("The method used to provision the host.")
           param :managed, :bool, :desc => N_("True/False flag whether a host is managed or unmanaged. Note: this value also determines whether several parameters are required or not")
           param :progress_report_id, String, :desc => N_("UUID to track orchestration tasks status, GET /api/orchestration/:UUID/tasks")
           param :comment, String, :desc => N_("Additional information about this host")
@@ -178,7 +178,7 @@ module Api
 
       api :GET, "/hosts/:id/status", N_("Get configuration status of host")
       param :id, :identifier_dottable, :required => true
-      description <<-eos
+      description <<-EOS
 Return value may either be one of the following:
 
 * Alerts disabled
@@ -188,7 +188,7 @@ Return value may either be one of the following:
 * Active
 * Pending
 * No changes
-      eos
+      EOS
 
       def status
         Foreman::Deprecation.api_deprecation_warning('The /status route is deprecated, please use the new /status/configuration instead')
@@ -197,12 +197,12 @@ Return value may either be one of the following:
 
       api :GET, "/hosts/:id/status/:type", N_("Get status of host")
       param :id, :identifier_dottable, :required => true
-      param :type, [ HostStatus::Global ] + HostStatus.status_registry.to_a.map { |s| s.humanized_name }, :required => true, :desc => N_(<<-eos
+      param :type, [ HostStatus::Global ] + HostStatus.status_registry.to_a.map { |s| s.humanized_name }, :required => true, :desc => N_(<<-EOS
 status type, can be one of
 * global
 * configuration
 * build
-eos
+EOS
 )
       description N_('Returns string representing a host status of a given type')
       def get_status
@@ -216,15 +216,15 @@ eos
 
       api :GET, "/hosts/:id/vm_compute_attributes", N_("Get vm attributes of host")
       param :id, :identifier_dottable, :required => true
-      description <<-eos
+      description <<-EOS
 Return the host's compute attributes that can be used to create a clone of this VM
-      eos
+      EOS
 
       def vm_compute_attributes
         render :json => {} unless @host
         attrs = @host.vm_compute_attributes || {}
         safe_attrs = {}
-        attrs.each_pair do |k,v|
+        attrs.each_pair do |k, v|
           # clean up the compute attributes to be suitable for output
           if v.is_a?(Proc)
             safe_attrs[k] = v.call

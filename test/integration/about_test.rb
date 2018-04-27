@@ -3,7 +3,6 @@ require 'integration_test_helper'
 class AboutIntegrationTest < IntegrationTestWithJavascript
   # intermittent failures:
   #   AboutIntegrationTest.test_0002_about page proxies should have version
-  extend Minitest::OptionalRetry
 
   setup do
     ComputeResource.any_instance.expects(:ping).at_least_once.returns([])
@@ -13,7 +12,7 @@ class AboutIntegrationTest < IntegrationTestWithJavascript
   end
 
   test "about page" do
-    assert_index_page(about_index_path,"About", nil, false, false)
+    assert_index_page(about_index_path, "About", nil, false, false)
     wait_for_ajax
     assert page.has_selector?('h4', :text => "System Status"), "System Status was expected in the <h4> tag, but was not found"
     assert page.has_selector?('h4', :text => "Support"), "Support was expected in the <h4> tag, but was not found"

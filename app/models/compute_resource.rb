@@ -1,4 +1,5 @@
 class ComputeResource < ApplicationRecord
+  audited :except => [:attrs]
   include Taxonomix
   include Encryptable
   include Authorizable
@@ -7,7 +8,6 @@ class ComputeResource < ApplicationRecord
 
   validates_lengths_from_database
 
-  audited :except => [:password, :attrs]
   serialize :attrs, Hash
   has_many :trends, :as => :trendable, :class_name => "ForemanTrend"
   belongs_to :http_proxy
@@ -51,9 +51,8 @@ class ComputeResource < ApplicationRecord
   end
 
   def self.registered_providers
-    Foreman::Plugin.all.map(&:compute_resources).inject({}) do |prov_hash, providers|
+    Foreman::Plugin.all.map(&:compute_resources).each_with_object({}) do |providers, prov_hash|
       providers.each { |provider| prov_hash.update(provider.split('::').last => provider) }
-      prov_hash
     end
   end
 
@@ -204,14 +203,14 @@ class ComputeResource < ApplicationRecord
   end
 
   def provider
-    read_attribute(:type).to_s.split('::').last
+    self[:type].to_s.split('::').last
   end
 
   def provider=(value)
     if self.class.providers.include? value
       self.type = self.class.provider_class(value)
     else
-      self.type = value #this will trigger validation error since value is one of supported_providers
+      self.type = value # this will trigger validation error since value is one of supported_providers
       logger.debug("unknown provider for compute resource")
     end
   end
@@ -223,7 +222,7 @@ class ComputeResource < ApplicationRecord
   def templates(opts = {})
   end
 
-  def template(id,opts = {})
+  def template(id, opts = {})
   end
 
   def update_required?(old_attrs, new_attrs)
@@ -343,7 +342,7 @@ class ComputeResource < ApplicationRecord
 
   def vm_compute_attributes(vm)
     vm_attrs = vm.attributes rescue {}
-    vm_attrs = vm_attrs.reject{|k,v| k == :id }
+    vm_attrs = vm_attrs.reject{|k, v| k == :id }
 
     vm_attrs = set_vm_volumes_attributes(vm, vm_attrs)
     vm_attrs
@@ -382,12 +381,14 @@ class ComputeResource < ApplicationRecord
 
   def nested_attributes_for(type, opts)
     return [] unless opts
-    opts = opts.dup #duplicate to prevent changing the origin opts.
+    opts = opts.to_hash if opts.class == ActionController::Parameters
+
+    opts = opts.dup # duplicate to prevent changing the origin opts.
     opts.delete("new_#{type}") || opts.delete("new_#{type}".to_sym) # delete template
     # convert our options hash into a sorted array (e.g. to preserve nic / disks order)
-    opts = opts.sort { |l, r| l[0].to_s.sub('new_','').to_i <=> r[0].to_s.sub('new_','').to_i }.map { |e| Hash[e[1]] }
+    opts = opts.sort { |l, r| l[0].to_s.sub('new_', '').to_i <=> r[0].to_s.sub('new_', '').to_i }.map { |e| Hash[e[1]] }
     opts.map do |v|
-      if v[:"_delete"] == '1' && v[:id].blank?
+      if v[:_delete] == '1' && v[:id].blank?
         nil
       else
         v.deep_symbolize_keys # convert to symbols deeper hashes

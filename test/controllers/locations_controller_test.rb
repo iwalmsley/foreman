@@ -51,7 +51,7 @@ class LocationsControllerTest < ActionController::TestCase
 
       assert_difference('Location.count', -1) do
         delete :destroy, params: { :id => location }, session: set_session_user
-        assert_match /Successfully deleted/, flash[:notice]
+        assert_match /Successfully deleted/, flash[:success]
       end
     end
   end
@@ -95,7 +95,7 @@ class LocationsControllerTest < ActionController::TestCase
       post :assign_all_hosts, params: { :id => location.id }, session: set_session_user
     end
     assert_redirected_to :controller => :locations, :action => :index
-    assert_equal flash[:notice], "All hosts previously with no location are now assigned to Location 1"
+    assert_equal flash[:success], "All hosts previously with no location are now assigned to Location 1"
   end
 
   test "should assign all hosts with no location to selected location and add taxable_taxonomies" do
@@ -126,7 +126,7 @@ class LocationsControllerTest < ActionController::TestCase
                                           }, session: set_session_user
     end
     assert_redirected_to :controller => :locations, :action => :index
-    assert_equal flash[:notice], "Selected hosts are now assigned to Location 1"
+    assert_equal flash[:success], "Selected hosts are now assigned to Location 1"
   end
 
   # Mismatches
@@ -141,13 +141,13 @@ class LocationsControllerTest < ActionController::TestCase
   test "button Fix All Mismatches should work" do
     post :import_mismatches, session: set_session_user
     assert_redirected_to :controller => :locations, :action => :index
-    assert_equal flash[:notice], "All mismatches between hosts and locations/organizations have been fixed"
+    assert_equal flash[:success], "All mismatches between hosts and locations/organizations have been fixed"
     # check that there are no mismatches
     get :mismatches, session: set_session_user
     assert_match "No hosts are mismatched", @response.body
   end
 
-  #Clone
+  # Clone
   test "should present clone wizard" do
     location = taxonomies(:location1)
     get :clone_taxonomy, params: { :id => location.id }, session: set_session_user
@@ -162,7 +162,7 @@ class LocationsControllerTest < ActionController::TestCase
 
     assert_difference "Location.unscoped.count", 1 do
       post :create, params: {
-        :location => location_dup.selected_ids.each { |_,v| v.uniq! }
+        :location => location_dup.selected_ids.each { |_, v| v.uniq! }
           .merge(:name => 'location_dup_name')
       }, session: set_session_user
     end
@@ -199,7 +199,7 @@ class LocationsControllerTest < ActionController::TestCase
     user2 = FactoryBot.create(:user, :with_mail)
     location = as_admin { FactoryBot.create(:location, :users => [user1, user2]) }
 
-    User.any_instance.expects(:expire_topbar_cache).times(2+User.only_admin.count) #2 users, all admins
+    User.any_instance.expects(:expire_topbar_cache).times(2+User.only_admin.count) # 2 users, all admins
     put :update, params: { :id => location.id, :location => {:name => "Topbar Loc" } }, session: set_session_user
   end
 
@@ -221,7 +221,7 @@ class LocationsControllerTest < ActionController::TestCase
 
   test 'should allow empty array as param value of array field while updating location' do
     location = taxonomies(:location2)
-    location.update_attributes(:organization_ids => [taxonomies(:organization2).id])
+    location.update(:organization_ids => [taxonomies(:organization2).id])
     saved_location = Location.find_by_id(location.id)
     assert_equal 1, saved_location.organization_ids.count
     put :update, params: { :id => location.id, :location => {:organization_ids => [""]} }, session: set_session_user
@@ -232,7 +232,7 @@ class LocationsControllerTest < ActionController::TestCase
   context 'wizard' do
     test 'redirects to step 2 if unassigned hosts exist' do
       host = FactoryBot.create(:host)
-      host.update_attributes(:location => nil)
+      host.update(:location => nil)
 
       location = FactoryBot.create(:location)
       Location.stubs(:current).returns(location)
@@ -251,7 +251,7 @@ class LocationsControllerTest < ActionController::TestCase
 
     test 'redirects to step 3 if no permissins for hosts' do
       host = FactoryBot.create(:host)
-      host.update_attributes(:location => nil)
+      host.update(:location => nil)
 
       Host.stubs(:authorized).returns(Host.where('1=0'))
 

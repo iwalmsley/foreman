@@ -11,7 +11,12 @@ module AuditsHelper
       when 'last_login_on'
         label = change.to_s(:short)
       when /.*_id$/
-        label = name.classify.gsub('Id','').constantize.find(change).to_label
+        begin
+          label = name.classify.gsub('Id', '').constantize.find(change).to_label
+        rescue NameError
+          # fallback to the value only instead of N/A that is in generic rescue below
+          return change.to_s
+        end
       else
         label = (change.to_s == AuditExtensions::REDACTED) ? _(change.to_s) : change.to_s
     end
@@ -38,7 +43,7 @@ module AuditsHelper
                else
                  audit.auditable_name
                end
-        name += " / #{audit.associated_name}" if audit.associated_id && !audit.associated_name.blank? && type_name != 'Interface'
+        name += " / #{audit.associated_name}" if audit.associated_id && audit.associated_name.present? && type_name != 'Interface'
         name
     end
   rescue StandardError => exception
@@ -46,13 +51,13 @@ module AuditsHelper
     ""
   end
 
-  def details(audit)
+  def details(audit, path = audit_path(audit))
     if audit.action == 'update'
       return [] unless audit.audited_changes.present?
       audit.audited_changes.map do |name, change|
         next if change.nil? || change.to_s.empty?
         if name == 'template'
-          (_("Template content changed %s") % (link_to 'view diff', audit_path(audit))).html_safe if audit_template? audit
+          (_("Template content changed %s") % (link_to 'view diff', path)).html_safe if audit_template? audit
         elsif name == "password_changed"
           _("Password has been changed")
         elsif name == "owner_id" || name == "owner_type"
@@ -104,6 +109,26 @@ module AuditsHelper
 
   def audit_time(audit)
     date_time_absolute(audit.created_at)
+  end
+
+  def audit_affected_locations(audit)
+    base = audit.locations.authorized(:view_locations)
+    return _('N/A') if base.empty?
+
+    authorizer = Authorizer.new(User.current, base)
+    base.map do |location|
+      link_to_if_authorized location.name, hash_for_edit_location_path(location).merge(:auth_object => location, :permission => 'edit_locations', :authorizer => authorizer)
+    end.to_sentence.html_safe
+  end
+
+  def audit_affected_organizations(audit)
+    base = audit.organizations.authorized(:view_organizations)
+    return _('N/A') if base.empty?
+
+    authorizer = Authorizer.new(User.current, base)
+    base.map do |organization|
+      link_to_if_authorized organization.name, hash_for_edit_organization_path(organization).merge(:auth_object => organization, :permission => 'edit_organizations', :authorizer => authorizer)
+    end.to_sentence.html_safe
   end
 
   def audited_icon(audit)
@@ -168,7 +193,29 @@ module AuditsHelper
   end
 
   def audit_details(audit)
-    ("#{audit_user(audit)} #{audit_remote_address audit} #{audit_action_name audit} #{audited_type audit}: #{link_to(audit_title(audit), audit_path(audit))}").html_safe
+    "#{audit_user(audit)} #{audit_remote_address audit} #{audit_action_name audit} #{audited_type audit}: #{link_to(audit_title(audit), audit_path(audit))}".html_safe
+  end
+
+  def nested_host_audit_breadcrumbs
+    return unless @host
+
+    breadcrumbs(
+      switchable: false,
+      items: [
+        {
+          caption: _("Hosts"),
+          url: (url_for(hosts_path) if authorized_for(hash_for_hosts_path))
+        },
+        {
+          caption: @host.name,
+          url: (host_path(@host) if authorized_for(hash_for_host_path(@host)))
+        },
+        {
+          caption: _('Audits'),
+          url: url_for(audits_path)
+        }
+      ]
+    )
   end
 
   private

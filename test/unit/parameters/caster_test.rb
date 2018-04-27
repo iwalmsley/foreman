@@ -9,7 +9,7 @@ class CasterTest < ActiveSupport::TestCase
     end
 
     test "integer" do
-      #this also tests that "132" isn't octal
+      # this also tests that "132" isn't octal
       item = OpenStruct.new(:foo => "132")
       Foreman::Parameters::Caster.new(item, :attribute_name => :foo, :to => :integer).cast!
       assert_equal item.foo, 132
@@ -52,15 +52,15 @@ class CasterTest < ActiveSupport::TestCase
     end
 
     test "array (json)" do
-      item = OpenStruct.new(:foo => [1,2,3].to_json)
+      item = OpenStruct.new(:foo => [1, 2, 3].to_json)
       Foreman::Parameters::Caster.new(item, :attribute_name => :foo, :to => :array).cast!
-      assert_equal item.foo, [1,2,3]
+      assert_equal item.foo, [1, 2, 3]
     end
 
     test "array (yml)" do
-      item = OpenStruct.new(:foo => [1,2,3].to_yaml)
+      item = OpenStruct.new(:foo => [1, 2, 3].to_yaml)
       Foreman::Parameters::Caster.new(item, :attribute_name => :foo, :to => :array).cast!
-      assert_equal item.foo, [1,2,3]
+      assert_equal item.foo, [1, 2, 3]
     end
 
     test "hash (json)" do

@@ -32,8 +32,10 @@ module OperatingsystemsHelper
                "Junos"
              when /OracleLinux/i
                "OracleLinux"
-             when /CoreOS/i
+             when /CoreOS|ContainerLinux|Container Linux/i
                "CoreOS"
+             when /RancherOS/i
+               "RancherOS"
              when /NXOS/i
                "NXOS"
              when /XenServer/i

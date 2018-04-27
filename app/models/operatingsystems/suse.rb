@@ -29,10 +29,10 @@ class Suse < Operatingsystem
   def self.shorten_description(description)
     return "" if description.blank?
     s = description.dup
-    s.gsub!('SUSE Linux Enterprise Server','SLES')
-    s.gsub!(/\(.+?\)/,'')
+    s.gsub!('SUSE Linux Enterprise Server', 'SLES')
+    s.gsub!(/\(.+?\)/, '')
     s.squeeze! " "
     s.strip!
-    s.blank? ? description : s
+    s.presence || description
   end
 end

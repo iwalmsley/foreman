@@ -18,6 +18,8 @@
 require_dependency 'foreman/plugin/logging'
 require_dependency 'foreman/plugin/rbac_registry'
 require_dependency 'foreman/plugin/rbac_support'
+require_dependency 'foreman/plugin/report_scanner_registry'
+require_dependency 'foreman/plugin/report_origin_registry'
 
 module Foreman #:nodoc:
   class PluginNotFound < Foreman::Exception; end
@@ -36,11 +38,14 @@ module Foreman #:nodoc:
   class Plugin
     @registered_plugins = {}
     @tests_to_skip = {}
+    @report_scanner_registry = Plugin::ReportScannerRegistry.new
+    @report_origin_registry = Plugin::ReportOriginRegistry.new
+
     class << self
       attr_reader   :registered_plugins
-      attr_accessor :tests_to_skip
+      attr_accessor :tests_to_skip, :report_scanner_registry,
+                    :report_origin_registry
       private :new
-      include Foreman::WebpackAssets
 
       def def_field(*names)
         class_eval do
@@ -70,6 +75,10 @@ module Foreman #:nodoc:
         registered_plugins[id] = plugin
       end
 
+      def unregister(plugin_id)
+        @registered_plugins.delete(plugin_id)
+      end
+
       # Clears the registered plugins hash
       # It doesn't unload installed plugins
       def clear
@@ -92,6 +101,10 @@ module Foreman #:nodoc:
       def installed?(id)
         registered_plugins[id.to_sym].present?
       end
+
+      def registered_report_scanners
+        report_scanner_registry.report_scanners
+      end
     end
 
     prepend Foreman::Plugin::Assets
@@ -99,11 +112,13 @@ module Foreman #:nodoc:
 
     def_field :name, :description, :url, :author, :author_url, :version, :path
     attr_reader :id, :logging, :provision_methods, :compute_resources, :to_prepare_callbacks,
-                :facets, :rbac_registry, :dashboard_widgets, :info_providers
+                :facets, :rbac_registry, :dashboard_widgets, :info_providers, :smart_proxy_references
 
     # Lists plugin's roles:
     # Foreman::Plugin.find('my_plugin').registered_roles
     delegate :registered_roles, :registered_permissions, :default_roles, :permissions, :permission_names, :to => :rbac_registry
+    delegate :register_report_scanner, :unregister_report_scanner, :to => :report_scanner_registry
+    delegate :register_report_origin, :to => :report_origin_registry
 
     def initialize(id)
       @id = id.to_sym
@@ -118,6 +133,15 @@ module Foreman #:nodoc:
       @controller_action_scopes = {}
       @dashboard_widgets = []
       @rabl_template_extensions = {}
+      @smart_proxy_references = []
+    end
+
+    def report_scanner_registry
+      self.class.report_scanner_registry
+    end
+
+    def report_origin_registry
+      self.class.report_origin_registry
     end
 
     def after_initialize
@@ -158,7 +182,7 @@ module Foreman #:nodoc:
       plugin = Plugin.find(plugin_name)
       raise PluginNotFound.new(N_("%{id} plugin requires the %{plugin_name} plugin, not found") % {:id =>id, :plugin_name=>plugin_name}) unless plugin
       unless Gem::Dependency.new('', matcher).match?('', plugin.version)
-        raise PluginRequirementError.new(N_("%{id} plugin requires the %{plugin_name} plugin %{matcher} but current is %{plugin_version}" % {:id=>id, :plugin_name=>plugin_name,:matcher=> matcher,:plugin_version=>plugin.version}))
+        raise PluginRequirementError.new(N_("%{id} plugin requires the %{plugin_name} plugin %{matcher} but current is %{plugin_version}" % {:id=>id, :plugin_name=>plugin_name, :matcher=> matcher, :plugin_version=>plugin.version}))
       end
       true
     end
@@ -211,7 +235,7 @@ module Foreman #:nodoc:
 
     def tests_to_skip(hash)
       # Format is { "testclass" => [ "skip1", "skip2" ] }
-      hash.each do |testclass,tests|
+      hash.each do |testclass, tests|
         if self.class.tests_to_skip[testclass].nil?
           self.class.tests_to_skip[testclass] = tests
         else
@@ -246,7 +270,11 @@ module Foreman #:nodoc:
     def role(name, permissions)
       default_roles[name] = permissions
       return false if pending_migrations || Rails.env.test? || User.unscoped.find_by_login(User::ANONYMOUS_ADMIN).nil?
-      Plugin::RoleLock.new(self.id).register_role name, permissions, rbac_registry
+      Role.without_auditing do
+        Filter.without_auditing do
+          Plugin::RoleLock.new(self.id).register_role name, permissions, rbac_registry
+        end
+      end
     rescue PermissionMissingException => e
       Rails.logger.warn(_("Could not create role '%{name}': %{message}") % {:name => name, :message => e.message})
       return false if Foreman.in_rake?
@@ -258,21 +286,33 @@ module Foreman #:nodoc:
     # Usage:
     # add_resource_permissions_to_default_roles ['MyPlugin::FirstResource', 'MyPlugin::SecondResource'], :except => [:skip_this_permission]
     def add_resource_permissions_to_default_roles(resources, opts = {})
-      Plugin::RbacSupport.new.add_resource_permissions_to_default_roles resources, opts
+      Role.without_auditing do
+        Filter.without_auditing do
+          Plugin::RbacSupport.new.add_resource_permissions_to_default_roles resources, opts
+        end
+      end
     end
 
     # Add plugin permissions to Manager and Viewer roles. Use this for permissions without resource_type or to handle special cases
     # Usage:
     # add_permissions_to_default_roles 'Role Name' => [:first_permission, :second_permission]
     def add_permissions_to_default_roles(args)
-      Plugin::RbacSupport.new.add_permissions_to_default_roles args
+      Role.without_auditing do
+        Filter.without_auditing do
+          Plugin::RbacSupport.new.add_permissions_to_default_roles args
+        end
+      end
     end
 
     # Add plugin permissions to Manager and Viewer roles. Use this method if there are no special cases that need to be taken care of.
     # Otherwise add_permissions_to_default_roles or add_resource_permissions_to_default_roles might be the methods you are looking for.
     def add_all_permissions_to_default_roles
       return if Foreman.in_rake?('db:migrate') || !permission_table_exists?
-      Plugin::RbacSupport.new.add_all_permissions_to_default_roles(Permission.where(:name => @rbac_registry.permission_names))
+      Role.without_auditing do
+        Filter.without_auditing do
+          Plugin::RbacSupport.new.add_all_permissions_to_default_roles(Permission.where(:name => @rbac_registry.permission_names))
+        end
+      end
     end
 
     def pending_migrations
@@ -300,6 +340,13 @@ module Foreman #:nodoc:
     def allowed_template_variables(*variables)
       in_to_prepare do
         Foreman::Renderer::ALLOWED_VARIABLES.concat(variables).uniq!
+      end
+    end
+
+    # List of global settings allowed for templates
+    def allowed_template_global_settings(*settings)
+      in_to_prepare do
+        Foreman::Renderer::ALLOWED_GLOBAL_SETTINGS.concat(settings).uniq!
       end
     end
 
@@ -427,6 +474,22 @@ module Foreman #:nodoc:
 
     def rabl_template_extensions(virtual_path)
       @rabl_template_extensions.fetch(virtual_path, [])
+    end
+
+    def add_counter_telemetry(name, description, instance_labels = [])
+      Foreman::Telemetry.instance.add_counter(name, description, instance_labels)
+    end
+
+    def add_gauge_telemetry(name, description, instance_labels = [])
+      Foreman::Telemetry.instance.add_gauge(name, description, instance_labels)
+    end
+
+    def add_histogram_telemetry(name, description, instance_labels = [], buckets = DEFAULT_BUCKETS)
+      Foreman::Telemetry.instance.add_histogram(name, description, instance_labels, buckets)
+    end
+
+    def smart_proxy_reference(hash)
+      @smart_proxy_references << ProxyReferenceRegistry.new_reference(hash)
     end
 
     private

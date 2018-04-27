@@ -51,15 +51,17 @@ module HostsHelper
   def host_taxonomy_select(f, taxonomy)
     taxonomy_id = "#{taxonomy.to_s.downcase}_id"
     selected_taxonomy = @host.new_record? ? taxonomy.current.try(:id) : @host.send(taxonomy_id)
+    label = _(taxonomy.to_s)
     select_opts = { :include_blank => !@host.managed? || @host.send(taxonomy_id).nil?,
                     :selected => selected_taxonomy }
     html_opts = { :disabled => !@host.new_record?,
                   :onchange => "#{taxonomy.to_s.downcase}_changed(this);",
-                  :label => _(taxonomy.to_s),
+                  :label => label,
                   :'data-host-id' => @host.id,
                   :'data-url' => process_taxonomy_hosts_path,
                   :help_inline => :indicator,
                   :required => true }
+    html_opts[:label_help] = _("#{taxonomy} can be changed using bulk action on the All Hosts page") unless @host.new_record?
 
     select_f f, taxonomy_id.to_sym, taxonomy.send("my_#{taxonomy.to_s.downcase.pluralize}"), :id, :to_label,
             select_opts, html_opts
@@ -206,7 +208,7 @@ module HostsHelper
   end
 
   def resources_chart(timerange = 1.day.ago)
-    applied, failed, restarted, failed_restarts, skipped = [],[],[],[],[]
+    applied, failed, restarted, failed_restarts, skipped = [], [], [], [], []
     @host.reports.recent(timerange).each do |r|
       applied         << [r.reported_at.to_i*1000, r.applied ]
       failed          << [r.reported_at.to_i*1000, r.failed ]
@@ -214,11 +216,11 @@ module HostsHelper
       failed_restarts << [r.reported_at.to_i*1000, r.failed_restarts ]
       skipped         << [r.reported_at.to_i*1000, r.skipped ]
     end
-    [{:label=>_("Applied"), :data=>applied,:color =>'#89A54E'},
-     {:label=>_("Failed"), :data=>failed,:color =>'#AA4643'},
-     {:label=>_("Failed restarts"), :data=>failed_restarts,:color =>'#EC971F'},
-     {:label=>_("Skipped"), :data=>skipped,:color =>'#80699B'},
-     {:label=>_("Restarted"), :data=>restarted,:color =>'#4572A7'}]
+    [{:label=>_("Applied"), :data=>applied, :color =>'#89A54E'},
+     {:label=>_("Failed"), :data=>failed, :color =>'#AA4643'},
+     {:label=>_("Failed restarts"), :data=>failed_restarts, :color =>'#EC971F'},
+     {:label=>_("Skipped"), :data=>skipped, :color =>'#80699B'},
+     {:label=>_("Restarted"), :data=>restarted, :color =>'#4572A7'}]
   end
 
   def runtime_chart(timerange = 1.day.ago)
@@ -227,7 +229,7 @@ module HostsHelper
       config  << [r.reported_at.to_i*1000, r.config_retrieval]
       runtime << [r.reported_at.to_i*1000, r.runtime]
     end
-    [{:label=>_("Config Retrieval"), :data=> config, :color=>'#AA4643'},{:label=>_("Runtime"), :data=> runtime,:color=>'#4572A7'}]
+    [{:label=>_("Config Retrieval"), :data=> config, :color=>'#AA4643'}, {:label=>_("Runtime"), :data=> runtime, :color=>'#4572A7'}]
   end
 
   def reports_show
@@ -258,17 +260,17 @@ module HostsHelper
       ]
     ]
     fields += host_detailed_status_list(host)
-    fields += [[_("Domain"), (link_to(host.domain, hosts_path(:search => %{domain = "#{host.domain}"})))]] if host.domain.present?
-    fields += [[_("Realm"), (link_to(host.realm, hosts_path(:search => %{realm = "#{host.realm}"})))]] if host.realm.present?
+    fields += [[_("Domain"), link_to(host.domain, hosts_path(:search => %{domain = "#{host.domain}"}))]] if host.domain.present?
+    fields += [[_("Realm"), link_to(host.realm, hosts_path(:search => %{realm = "#{host.realm}"}))]] if host.realm.present?
     fields += [[_("IP Address"), host.ip]] if host.ip.present?
     fields += [[_("IPv6 Address"), host.ip6]] if host.ip6.present?
     fields += [[_("Comment"), host.comment]] if host.comment.present?
     fields += [[_("MAC Address"), host.mac]] if host.mac.present?
-    fields += [[_("Puppet Environment"), (link_to(host.environment, hosts_path(:search => %{environment = "#{host.environment}"})))]] if host.environment.present?
-    fields += [[_("Architecture"), (link_to(host.arch, hosts_path(:search => %{architecture = "#{host.arch}"})))]] if host.arch.present?
-    fields += [[_("Operating System"), (link_to(host.operatingsystem.to_label, hosts_path(:search => %{os_title = "#{host.operatingsystem.title}"})))]] if host.operatingsystem.present?
+    fields += [[_("Puppet Environment"), link_to(host.environment, hosts_path(:search => %{environment = "#{host.environment}"}))]] if host.environment.present?
+    fields += [[_("Architecture"), link_to(host.arch, hosts_path(:search => %{architecture = "#{host.arch}"}))]] if host.arch.present?
+    fields += [[_("Operating System"), link_to(host.operatingsystem.to_label, hosts_path(:search => %{os_title = "#{host.operatingsystem.title}"}))]] if host.operatingsystem.present?
     fields += [[_("PXE Loader"), host.pxe_loader]] if host.operatingsystem.present? && host.pxe_build?
-    fields += [[_("Host group"), (link_to(host.hostgroup, hosts_path(:search => %{hostgroup_title = "#{host.hostgroup}"})))]] if host.hostgroup.present?
+    fields += [[_("Host group"), link_to(host.hostgroup, hosts_path(:search => %{hostgroup_title = "#{host.hostgroup}"}))]] if host.hostgroup.present?
     fields += [[_("Location"), (link_to(host.location.title, hosts_path(:search => %{location = "#{host.location}"})) if host.location)]] if SETTINGS[:locations_enabled]
     fields += [[_("Organization"), (link_to(host.organization.title, hosts_path(:search => %{organization = "#{host.organization}"})) if host.organization)]] if SETTINGS[:organizations_enabled]
     if SETTINGS[:login]
@@ -406,7 +408,8 @@ module HostsHelper
           :name => 'allocation_radio_btn',
           :class => (label == active) ? 'btn btn-default active' : 'btn btn-default',
           :onclick => "tfm.computeResource.libvirt.allocationSwitcher(this, '#{label}');",
-          :data => { :toggle => 'button' }
+          :data => { :toggle => 'button' },
+          :id => (label == 'Full') ? 'btnAllocationFull' : nil
       end.join(' ').html_safe
     end)
   end
@@ -490,5 +493,9 @@ module HostsHelper
 
   def power_status_visible?
     SETTINGS[:unattended] && Setting[:host_power_status]
+  end
+
+  def host_breadcrumb
+    breadcrumbs(resource_url: "/api/v2/hosts?thin=true'")
   end
 end

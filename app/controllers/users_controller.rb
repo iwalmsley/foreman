@@ -3,6 +3,7 @@ class UsersController < ApplicationController
   include Foreman::Controller::UsersMixin
   include Foreman::Controller::Parameters::User
   include Foreman::Controller::BruteforceProtection
+  include Foreman::TelemetryHelper
 
   skip_before_action :require_mail, :only => [:edit, :update, :logout]
   skip_before_action :require_login, :authorize, :session_expiry, :update_activity_time, :set_taxonomy, :set_gettext_locale_db, :only => [:login, :logout, :extlogout]
@@ -38,7 +39,7 @@ class UsersController < ApplicationController
   def update
     editing_self?
     @user = find_resource(:edit_users)
-    if @user.update_attributes(user_params)
+    if @user.update(user_params)
       update_sub_hostgroups_owners
 
       process_success((editing_self? && !current_user.allowed_to?({:controller => 'users', :action => 'index'})) ? { :success_redirect => hosts_path } : {})
@@ -50,7 +51,8 @@ class UsersController < ApplicationController
   def destroy
     @user = find_resource(:destroy_users)
     if @user == User.current
-      warning _("You cannot delete this user while logged in as this user")
+      warning_link = { text: _("Logout"), href: logout_users_url }
+      warning _("You cannot delete this user while logged in as this user"), { :link => warning_link }
       redirect_back(fallback_location: users_path)
       return
     end
@@ -69,6 +71,7 @@ class UsersController < ApplicationController
     if bruteforce_attempt?
       inline_error _("Too many tries, please try again in a few minutes.")
       log_bruteforce
+      telemetry_increment_counter(:bruteforce_locked_ui_logins)
       render :layout => 'login', :status => :unauthorized
       return
     end
@@ -82,13 +85,15 @@ class UsersController < ApplicationController
         user = User.try_to_login(params[:login]['login'], params[:login]['password'])
       end
       if user.nil?
-        #failed to authenticate, and/or to generate the account on the fly
+        # failed to authenticate, and/or to generate the account on the fly
         inline_error _("Incorrect username or password")
+        logger.warn("Failed login attempt from #{request.ip} with username '#{params[:login].try(:[], 'login')}'")
         count_login_failure
+        telemetry_increment_counter(:failed_ui_logins)
         redirect_to login_users_path
       else
-        #valid user
-        #If any of the user attributes provided by external auth source are invalid then throw a flash message to user on successful login.
+        # valid user
+        # If any of the user attributes provided by external auth source are invalid then throw a flash message to user on successful login.
         warning _("Some imported user account details cannot be saved: %s") % user.errors.full_messages.to_sentence unless user.errors.empty?
         login_user(user)
       end
@@ -118,8 +123,9 @@ class UsersController < ApplicationController
 
     TopbarSweeper.expire_cache
     sso_logout_path = get_sso_method.try(:logout_url)
+    logger.info("User '#{User.unscoped.find_by_id(session[:user]).try(:login) || session[:user]}' logged out")
     session[:user] = @user = User.current = nil
-    if flash[:notice] || flash[:error]
+    if flash[:success] || flash[:info] || flash[:error]
       flash.keep
     else
       session.clear
@@ -155,12 +161,14 @@ class UsersController < ApplicationController
   end
 
   def login_user(user)
+    logger.info("User '#{user.login}' logged in from '#{request.ip}'")
     session[:user]         = user.id
     uri                    = session.to_hash.with_indifferent_access[:original_uri]
     session[:original_uri] = nil
     store_default_taxonomy(user, 'organization') unless session.has_key?(:organization_id)
     store_default_taxonomy(user, 'location') unless session.has_key?(:location_id)
     TopbarSweeper.expire_cache
+    telemetry_increment_counter(:successful_ui_logins)
     user.post_successful_login
     redirect_to (uri || hosts_path)
   end

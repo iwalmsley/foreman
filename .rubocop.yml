@@ -3,7 +3,7 @@ inherit_from:
   - .rubocop_todo.yml
 
 AllCops:
-  TargetRubyVersion: 2.2
+  TargetRubyVersion: 2.3
   TargetRailsVersion: 5.1
   Include:
     - 'app/views/api/**/*.rabl'
@@ -46,10 +46,6 @@ Metrics/ClassLength:
 Performance/Casecmp:
   Enabled: false
 
-Performance/FixedSize:
-  Exclude:
-    - 'test/**/*'
-
 Performance/RedundantMatch:
   Enabled: true
 
@@ -76,4 +72,13 @@ Layout/FirstParameterIndentation:
   EnforcedStyle: consistent
 
 Bundler/OrderedGems:
+  Enabled: false
+
+Style/Alias:
+  EnforcedStyle: prefer_alias_method
+
+Layout/DotPosition:
+  Enabled: false
+
+Style/IfUnlessModifier:
   Enabled: false

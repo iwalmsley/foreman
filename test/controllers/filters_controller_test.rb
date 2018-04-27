@@ -30,7 +30,7 @@ class FiltersControllerTest < ActionController::TestCase
     assert_response :success
     refute_empty assigns(:filters)
     assert_equal Filter.search_for("role = #{role.name}").count, assigns(:filters).count
-    assert_match "Filters for role Manager", @response.body
+    assert_match "{\"caption\":\"Roles\",\"url\":\"/roles\"},{\"caption\":\"Manager filters\"}", @response.body
   end
 
   test "should create filter" do
@@ -80,7 +80,7 @@ class FiltersControllerTest < ActionController::TestCase
     role.organizations = [ org1 ]
     role.filters.reload
     filter_with_org = role.filters.detect(&:allows_organization_filtering?)
-    filter_with_org.update_attributes :organizations => [ org1, org2 ], :override => true
+    filter_with_org.update :organizations => [ org1, org2 ], :override => true
 
     patch :disable_overriding, params: { :role_id => role.id, :id => filter_with_org.id }, session: set_session_user
 

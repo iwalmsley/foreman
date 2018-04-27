@@ -1,6 +1,8 @@
 require 'digest/sha1'
 
 class User < ApplicationRecord
+  audited :except => [:last_login_on, :password_hash, :password_salt, :password_confirmation],
+          :associations => :roles
   include Authorizable
   extend FriendlyId
   friendly_id :login
@@ -11,7 +13,6 @@ class User < ApplicationRecord
   include UserUsergroupCommon
   include Exportable
   include TopbarCacheExpiry
-  audited :except => [:last_login_on, :password_hash, :password_salt, :password_confirmation]
 
   ANONYMOUS_ADMIN = 'foreman_admin'
   ANONYMOUS_API_ADMIN = 'foreman_api_admin'
@@ -43,7 +44,7 @@ class User < ApplicationRecord
   has_many :widgets, :dependent => :destroy
   has_many :ssh_keys, :dependent => :destroy
   has_many :personal_access_tokens, :dependent => :destroy
-
+  has_many :table_preferences, :dependent => :destroy, :inverse_of => :user
   has_many :user_mail_notifications, :dependent => :destroy, :inverse_of => :user
   has_many :mail_notifications, :through => :user_mail_notifications
   has_many :notification_recipients, :dependent => :delete_all
@@ -78,6 +79,10 @@ class User < ApplicationRecord
 
   validates :locale, :format => { :with => /\A\w{2}([_-]\w{2})?\Z/ }, :allow_blank => true, :if => Proc.new { |user| user.respond_to?(:locale) }
   before_validation :normalize_locale
+
+  def self.title_name
+    "login".freeze
+  end
 
   def self.name_format
     /\A[[:alnum:]\s'_\-\.()<>;=,]*\z/
@@ -163,7 +168,7 @@ class User < ApplicationRecord
   # note that if you assign user new usergroups which change the admin flag you must save
   # the record before #admin? will reflect this
   def admin?
-    read_attribute(:admin) || cached_usergroups.any?(&:admin?)
+    self[:admin] || cached_usergroups.any?(&:admin?)
   end
 
   def hidden?
@@ -176,7 +181,7 @@ class User < ApplicationRecord
 
   def to_label
     name = [firstname, lastname].join(' ')
-    name.present? ? name : login
+    name.presence || login
   end
   alias_method :name, :to_label
 
@@ -233,7 +238,7 @@ class User < ApplicationRecord
           if attrs.is_a? Hash
             valid_attrs = attrs.slice(:firstname, :lastname, :mail, :avatar_hash).delete_if { |k, v| v.blank? }
             logger.debug("Updating user #{user.login} attributes from auth source: #{attrs.keys}")
-            unless user.update_attributes(valid_attrs)
+            unless user.update(valid_attrs)
               logger.warn "Failed to update #{user.login} attributes: #{user.errors.full_messages.join(', ')}"
             end
           end
@@ -279,7 +284,7 @@ class User < ApplicationRecord
         new_usergroups = user.usergroups.includes(:external_usergroups).where('usergroups.id NOT IN (?)', auth_source_external_groups)
 
         new_usergroups += auth_source.external_usergroups.includes(:usergroup).where(:name => external_groups).map(&:usergroup)
-        user.update_attributes(Hash[attrs.select { |k, v| v.present? }])
+        user.update(Hash[attrs.select { |k, v| v.present? }])
         user.usergroups = new_usergroups.uniq
       end
 
@@ -306,7 +311,7 @@ class User < ApplicationRecord
   end
 
   def set_lower_login
-    self.lower_login = login.downcase unless login.blank?
+    self.lower_login = login.downcase if login.present?
   end
 
   def matching_password?(pass)
@@ -348,7 +353,7 @@ class User < ApplicationRecord
 
   def manage_password?
     return false if self.admin? && !User.current.try(:admin?)
-    auth_source && auth_source.can_set_password?
+    auth_source&.can_set_password?
   end
 
   # Return true if the user is allowed to do the specified action
@@ -536,7 +541,7 @@ class User < ApplicationRecord
   private
 
   def prepare_password
-    unless password.blank?
+    if password.present?
       self.password_salt = Digest::SHA1.hexdigest([Time.now.utc, rand].join)
       self.password_hash = hash_password(password)
     end
@@ -560,7 +565,7 @@ class User < ApplicationRecord
   end
 
   def normalize_mail
-    self.mail = mail.strip unless mail.blank?
+    self.mail = mail.strip if mail.present?
   end
 
   def reject_empty_intervals(attributes)
@@ -675,8 +680,8 @@ class User < ApplicationRecord
   end
 
   def check_permissions_for_changing_login
-    if login_changed? && !(self.new_record?)
-      if !(self.internal?)
+    if login_changed? && !self.new_record?
+      if !self.internal?
         errors.add :login, _("It is not possible to change external users login")
       elsif !(User.current.can?(:edit_users, self) || (self.id == User.current.id))
         errors.add :login, _("You do not have permission to edit the login")

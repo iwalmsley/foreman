@@ -120,7 +120,7 @@ module TaxonomiesBaseTest
 
     test 'it should return selected_ids array of selected values only (when types are not ignored)' do
       taxonomy = taxonomies(:"#{taxonomy_name}1")
-      #fixtures for taxable_taxonomies don't work, on has_many :through polymorphic
+      # fixtures for taxable_taxonomies don't work, on has_many :through polymorphic
       # run selected_ids method
       selected_ids = taxonomy.selected_ids
       # get results from taxable_taxonomies
@@ -197,7 +197,7 @@ module TaxonomiesBaseTest
 
     test "it should have its own class as auditable_type" do
       taxonomy = taxonomies(:"#{taxonomy_name}2")
-      assert taxonomy.update_attributes!(:name => 'newname')
+      assert taxonomy.update!(:name => 'newname')
       assert_equal taxonomy_name.classify, Audit.unscoped.last.auditable_type
     end
 
@@ -239,7 +239,7 @@ module TaxonomiesBaseTest
       end
     end
 
-    #taxonomy_class inheritance tests
+    # taxonomy_class inheritance tests
     test "inherited taxonomy should have correct path" do
       parent = taxonomies(:"#{taxonomy_name}1")
       taxonomy = taxonomy_class.create!(:name => "rack1", :parent_id => parent.id)
@@ -261,7 +261,7 @@ module TaxonomiesBaseTest
       # add subnet to taxonomy
       assert TaxableTaxonomy.create(:taxonomy_id => taxonomy.id, :taxable_id => subnets(:two).id, :taxable_type => "Subnet")
       # check that inherited_ids of taxonomy matches selected_ids of parent, except for subnet
-      taxonomy.selected_or_inherited_ids.each do |k,v|
+      taxonomy.selected_or_inherited_ids.each do |k, v|
         assert_equal v.uniq, parent.selected_ids[k].uniq unless k == 'subnet_ids'
         assert_equal v.uniq, ([subnets(:two).id] + parent.selected_ids[k].uniq) if k == 'subnet_ids'
       end
@@ -275,7 +275,7 @@ module TaxonomiesBaseTest
       parent.update_attribute(:domains, [domain1, domain2])
       parent.update_attribute(:subnets, [subnet])
       # we're no longer using the fixture dhcp/dns/tftp proxy to create the host, so remove them
-      parent.update_attribute(:smart_proxies,[smart_proxies(:puppetmaster),smart_proxies(:realm)])
+      parent.update_attribute(:smart_proxies, [smart_proxies(:puppetmaster), smart_proxies(:realm)])
 
       taxonomy = taxonomy_class.create :name => "rack1", :parent_id => parent.id
       FactoryBot.build(:host,
@@ -299,7 +299,7 @@ module TaxonomiesBaseTest
                          :template_kind    => TemplateKind.find_by_name('provision'))
 
       # check that inherited_ids of taxonomy matches selected_ids of parent
-      taxonomy.inherited_ids.each do |k,v|
+      taxonomy.inherited_ids.each do |k, v|
         assert_equal v.sort, parent.selected_ids[k].sort
       end
     end
@@ -308,7 +308,7 @@ module TaxonomiesBaseTest
       parent = taxonomies(:"#{taxonomy_name}1")
       taxonomy = taxonomy_class.create :name => "rack1", :parent_id => parent.id
       # no hosts were assigned to taxonomy, so no missing ids need to be selected
-      taxonomy.need_to_be_selected_ids.each do |k,v|
+      taxonomy.need_to_be_selected_ids.each do |k, v|
         assert v.empty?
       end
     end

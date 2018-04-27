@@ -1,4 +1,11 @@
 class Host::Managed < Host::Base
+  # audit the changes to this model
+  audited :except => [:last_report, :last_compile, :lookup_value_matcher]
+  has_associated_audits
+  # redefine audits relation because of the type change (by default the relation will look for auditable_type = 'Host::Managed')
+  has_many :audits, -> { where(:auditable_type => 'Host::Base') }, :foreign_key => :auditable_id,
+           :class_name => 'Audited::Audit'
+
   include Hostext::PowerInterface
   include Hostext::Search
   include Hostext::SmartProxy
@@ -13,6 +20,7 @@ class Host::Managed < Host::Base
   has_many :puppetclasses, :through => :host_classes, :dependent => :destroy
   has_many :reports, :foreign_key => :host_id, :class_name => 'ConfigReport'
   has_one :last_report_object, -> { order("#{Report.table_name}.id DESC") }, :foreign_key => :host_id, :class_name => 'ConfigReport'
+  has_many :all_reports, :foreign_key => :host_id
 
   belongs_to :image
   has_many :host_statuses, :class_name => 'HostStatus::Status', :foreign_key => 'host_id', :inverse_of => :host, :dependent => :destroy
@@ -66,6 +74,12 @@ class Host::Managed < Host::Base
 
   include HostCommon
 
+  smart_proxy_reference :subnet => [:dns_id, :dhcp_id, :tftp_id]
+  smart_proxy_reference :subnet6 => [:dns_id, :dhcp_id, :tftp_id]
+  smart_proxy_reference :domain => [:dns_id]
+  smart_proxy_reference :realm => [:realm_proxy_id]
+  smart_proxy_reference :self => [:puppet_proxy_id, :puppet_ca_proxy_id]
+
   class Jail < ::Safemode::Jail
     allow :name, :diskLayout, :puppetmaster, :puppet_ca_server, :operatingsystem, :os, :environment, :ptable, :hostgroup,
       :url_for_boot, :hostgroup, :compute_resource, :domain, :ip, :ip6, :mac, :shortname, :architecture,
@@ -77,8 +91,36 @@ class Host::Managed < Host::Base
       :ssh_authorized_keys, :pxe_loader
   end
 
-  scope :recent,      ->(*args) { where(["#{Host.table_name}.last_report > ?", (args.first || (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes.ago)]) }
-  scope :out_of_sync, ->(*args) { where(["#{Host.table_name}.last_report < ? and hosts.enabled != ?", (args.first || (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes.ago), false]) }
+  scope :recent, lambda { |interval = Setting[:outofsync_interval]|
+    with_last_report_within(interval.to_i.minutes)
+  }
+
+  scope :out_of_sync, lambda { |interval = Setting[:outofsync_interval]|
+    not_disabled.with_last_report_exceeded(interval.to_i.minutes)
+  }
+
+  scope :out_of_sync_for, lambda { |report_origin|
+    interval = Setting[:"#{report_origin.downcase}_interval"] || Setting[:outofsync_interval]
+    with_last_report_exceeded(interval.to_i.minutes)
+      .not_disabled
+      .with_last_report_origin(report_origin)
+  }
+
+  scope :not_disabled, lambda {
+    where(["#{Host.table_name}.enabled != ?", false])
+  }
+
+  scope :with_last_report_within, lambda { |minutes|
+    where(["#{Host.table_name}.last_report > ?", minutes.ago])
+  }
+
+  scope :with_last_report_exceeded, lambda { |minutes|
+    where(["#{Host.table_name}.last_report < ?", minutes.ago])
+  }
+
+  scope :with_last_report_origin, lambda { |origin|
+    includes(:last_report_object).where(reports: { origin: origin })
+  }
 
   scope :with_status, lambda { |status_type|
     eager_load(:host_statuses).where("host_status.type = '#{status_type}'")
@@ -128,7 +170,7 @@ class Host::Managed < Host::Base
   }
 
   scope :without_pending_changes, lambda {
-    with_config_status.where((HostStatus::ConfigurationStatus.is_not('pending')).to_s)
+    with_config_status.where(HostStatus::ConfigurationStatus.is_not('pending').to_s)
   }
 
   scope :successful, -> { without_changes.without_error.without_pending_changes}
@@ -137,7 +179,7 @@ class Host::Managed < Host::Base
 
   scope :alerts_enabled, -> { where(:enabled => true) }
 
-  scope :run_distribution, lambda { |fromtime,totime|
+  scope :run_distribution, lambda { |fromtime, totime|
     if fromtime.nil? || totime.nil?
       raise ::Foreman.Exception.new(N_("invalid time range"))
     else
@@ -145,16 +187,13 @@ class Host::Managed < Host::Base
     end
   }
 
-  scope :for_vm, ->(cr,vm) { where(:compute_resource_id => cr.id, :uuid => Array.wrap(vm).compact.map(&:identity).map(&:to_s)) }
+  scope :with_any_reports_between, lambda { |from, to|
+    joins(:all_reports).where("reports.reported_at BETWEEN ? AND ?", from, to)
+  }
+
+  scope :for_vm, ->(cr, vm) { where(:compute_resource_id => cr.id, :uuid => Array.wrap(vm).compact.map(&:identity).map(&:to_s)) }
 
   scope :with_compute_resource, -> { where.not(:compute_resource_id => nil, :uuid => nil) }
-
-  # audit the changes to this model
-  audited :except => [:last_report, :last_compile, :lookup_value_matcher]
-  has_associated_audits
-  #redefine audits relation because of the type change (by default the relation will look for auditable_type = 'Host::Managed')
-  has_many :audits, -> { where(:auditable_type => 'Host::Base') }, :foreign_key => :auditable_id,
-    :class_name => 'Audited::Audit'
 
   # some shortcuts
   alias_attribute :arch, :architecture
@@ -262,9 +301,9 @@ class Host::Managed < Host::Base
     end
   end
 
-  #retuns fqdn of host puppetmaster
+  # retuns fqdn of host puppetmaster
   def pm_fqdn
-    (puppetmaster == "puppet") ? "puppet.#{domain.name}" : (puppetmaster).to_s
+    (puppetmaster == "puppet") ? "puppet.#{domain.name}" : puppetmaster.to_s
   end
 
   # Cleans Certificate and enable Autosign
@@ -316,7 +355,7 @@ class Host::Managed < Host::Base
   # returns the host correct disk layout, custom or common
   def diskLayout
     @host = self
-    template = disk.blank? ? ptable.layout : disk
+    template = disk.presence || ptable.layout
     template_name = disk.blank? ? ptable.name : 'Custom disk layout'
     unattended_render(template.tr("\r", ''), template_name)
   end
@@ -327,7 +366,11 @@ class Host::Managed < Host::Base
   end
 
   def no_report
-    last_report.nil? || last_report < Time.now.utc - (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes && enabled?
+    last_report.nil? || last_report < Time.now.utc - origin_interval.minutes && enabled?
+  end
+
+  def origin_interval
+    Setting[:"#{last_report.origin.downcase}_interval"] || 0
   end
 
   def disabled?
@@ -408,7 +451,7 @@ class Host::Managed < Host::Base
     # additionally, we don't import any non strings values, as puppet don't know what to do with those as well.
 
     myparams = self.info["parameters"]
-    nodeinfo["parameters"].each_pair do |param,value|
+    nodeinfo["parameters"].each_pair do |param, value|
       next if fact_names.exists? :name => param
       next unless value.is_a?(String)
 
@@ -432,7 +475,7 @@ class Host::Managed < Host::Base
     output = []
     data = group("#{Host.table_name}.#{association}_id").reorder('').count
     associations = association.to_s.camelize.constantize.where(:id => data.keys).all
-    data.each do |k,v|
+    data.each do |k, v|
       begin
         output << {:label => associations.detect {|a| a.id == k }.to_label, :data => v } unless v == 0
       rescue
@@ -448,7 +491,7 @@ class Host::Managed < Host::Base
   # returns sorted hash
   def self.count_habtm(association)
     counter = Host::Managed.joins(association.tableize.to_sym).group("#{association.tableize.to_sym}.id").reorder('').count
-    #Puppetclass.find(counter.keys.compact)...
+    # Puppetclass.find(counter.keys.compact)...
     association.camelize.constantize.find(counter.keys.compact).map {|i| {:label=>i.to_label, :data =>counter[i.id]}}
   end
 
@@ -487,7 +530,7 @@ class Host::Managed < Host::Base
     attributes = hash_clone(attributes).with_indifferent_access
 
     new_hostgroup_id = attributes['hostgroup_id'] || attributes['hostgroup_name'] || attributes['hostgroup'].try(:id)
-    #hostgroup didn't change, no inheritance needs update.
+    # hostgroup didn't change, no inheritance needs update.
     return attributes if new_hostgroup_id.blank?
 
     new_hostgroup = self.hostgroup if initialized
@@ -575,7 +618,7 @@ class Host::Managed < Host::Base
 
   # if certname does not exist, use hostname instead
   def certname
-    read_attribute(:certname) || name
+    self[:certname] || name
   end
 
   def capabilities
@@ -596,7 +639,7 @@ class Host::Managed < Host::Base
 
   # no need to store anything in the db if the password is our default
   def root_pass
-    return read_attribute(:root_pass) if read_attribute(:root_pass).present?
+    return self[:root_pass] if self[:root_pass].present?
     return hostgroup.try(:root_pass) if hostgroup.try(:root_pass).present?
     Setting[:root_pass]
   end
@@ -662,15 +705,15 @@ class Host::Managed < Host::Base
 
   # take from hostgroup if compute_profile_id is nil
   def compute_profile_id
-    read_attribute(:compute_profile_id) || hostgroup.try(:compute_profile_id)
+    self[:compute_profile_id] || hostgroup.try(:compute_profile_id)
   end
 
   def provision_method
-    read_attribute(:provision_method) || capabilities.first.to_s
+    self[:provision_method] || capabilities.first.to_s
   end
 
   def explicit_pxe_loader
-    read_attribute(:pxe_loader).presence
+    self[:pxe_loader].presence
   end
 
   def pxe_loader
@@ -790,6 +833,12 @@ class Host::Managed < Host::Base
 
   private
 
+  # Permissions introduced by plugins for this class can cause resource <-> permission
+  # names mapping to fail randomly so as a safety precaution, we specify the name more explicitly.
+  def permission_name(action)
+    "#{action}_hosts"
+  end
+
   def compute_profile_present?
     !(compute_profile_id.nil? || compute_resource_id.nil?)
   end
@@ -825,7 +874,7 @@ class Host::Managed < Host::Base
   # checks if the host association is a valid association for this host
   def ensure_associations
     status = true
-    %w{ ptable medium architecture}.each do |e|
+    %w{ptable medium architecture}.each do |e|
       value = self.send(e.to_sym)
       next if value.blank?
       unless os.send(e.pluralize.to_sym).include?(value)
@@ -844,7 +893,7 @@ class Host::Managed < Host::Base
   end
 
   def set_certname
-    self.certname = Foreman.uuid if read_attribute(:certname).blank? || new_record?
+    self.certname = Foreman.uuid if self[:certname].blank? || new_record?
   end
 
   def provision_method_in_capabilities

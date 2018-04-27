@@ -206,22 +206,40 @@ class PluginTest < ActiveSupport::TestCase
     end
   end
 
-  def test_register_allowed_template_helpers_and_variables
+  def test_register_allowed_template_helpers
     refute_includes Foreman::Renderer::ALLOWED_HELPERS, :my_helper
-    refute_includes Foreman::Renderer::ALLOWED_VARIABLES, :my_variable
-
     @klass.register :foo do
       allowed_template_helpers :my_helper
+    end
+    # simulate application start
+    @klass.find(:foo).to_prepare_callbacks.each(&:call)
+    assert_includes Foreman::Renderer::ALLOWED_HELPERS, :my_helper
+  ensure
+    Foreman::Renderer::ALLOWED_HELPERS.delete(:my_helper)
+  end
+
+  def test_register_allowed_template_variables
+    refute_includes Foreman::Renderer::ALLOWED_VARIABLES, :my_variable
+    @klass.register :foo do
       allowed_template_variables :my_variable
     end
     # simulate application start
     @klass.find(:foo).to_prepare_callbacks.each(&:call)
-
-    assert_includes Foreman::Renderer::ALLOWED_HELPERS, :my_helper
     assert_includes Foreman::Renderer::ALLOWED_VARIABLES, :my_variable
   ensure
-    Foreman::Renderer::ALLOWED_HELPERS.delete(:my_helper)
-    Foreman::Renderer::ALLOWED_HELPERS.delete(:my_variable)
+    Foreman::Renderer::ALLOWED_VARIABLES.delete(:my_variable)
+  end
+
+  def test_register_allowed_global_settings
+    refute_includes Foreman::Renderer::ALLOWED_GLOBAL_SETTINGS, :my_global_setting
+    @klass.register :foo do
+      allowed_template_global_settings :my_global_setting
+    end
+    # simulate application start
+    @klass.find(:foo).to_prepare_callbacks.each(&:call)
+    assert_includes Foreman::Renderer::ALLOWED_GLOBAL_SETTINGS, :my_global_setting
+  ensure
+    Foreman::Renderer::ALLOWED_GLOBAL_SETTINGS.delete(:my_global_setting)
   end
 
   def test_extend_rendering_helpers
@@ -483,6 +501,17 @@ class PluginTest < ActiveSupport::TestCase
     assert_equal ['api/v2/hosts/expiration'], templates
   end
 
+  def test_add_smart_proxy_reference
+    refs = ProxyReferenceRegistry.smart_proxy_references
+    ProxyReferenceRegistry.references = nil
+    Foreman::Plugin.register :test_add_smart_proxy_reference do
+      smart_proxy_reference :hosts => [:test]
+    end
+    assert_equal [:test], ProxyReferenceRegistry.find_by_relation(:hosts).columns
+  ensure
+    ProxyReferenceRegistry.references = refs
+  end
+
   context "adding permissions" do
     teardown do
       permission = Foreman::AccessControl.permission(:test_permission)
@@ -568,6 +597,31 @@ class PluginTest < ActiveSupport::TestCase
 
       assert_equal 1, ::Pagelets::Manager.pagelets_at("tests/show", :main_tabs).count
       assert_equal "My Tab", ::Pagelets::Manager.pagelets_at("tests/show", :main_tabs).first.name
+    end
+  end
+
+  describe 'Report scanner' do
+    subject { Foreman::Plugin.register('test') {} }
+    let(:report_scanner) { stub_everything('Object') }
+
+    describe '.register_report_scanner' do
+      it 'adds a class to report_scanner' do
+        refute subject.class.registered_report_scanners.include? report_scanner
+        subject.register_report_scanner report_scanner
+        assert subject.class.registered_report_scanners.include? report_scanner
+      end
+    end
+
+    describe '.unregister_report_scanner' do
+      before do
+        subject.register_report_scanner report_scanner
+      end
+
+      it 'removes a class to report_scanner' do
+        assert subject.class.registered_report_scanners.include? report_scanner
+        subject.unregister_report_scanner report_scanner
+        refute subject.class.registered_report_scanners.include? report_scanner
+      end
     end
   end
 end

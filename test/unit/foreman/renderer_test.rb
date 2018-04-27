@@ -80,11 +80,11 @@ class RendererTest < ActiveSupport::TestCase
   end
 
   test "foreman_url should respect proxy with Templates feature" do
-    host = FactoryBot.build(:host, :with_separate_provision_interface)
-    template_proxy_url = SmartProxy.with_features("Templates").first.url
-    ProxyAPI::Template.any_instance.stubs(:template_url).returns(template_proxy_url)
+    host = FactoryBot.build(:host, :with_separate_provision_interface, :with_dhcp_orchestration)
+    host.provision_interface.subnet.template = FactoryBot.build(:template_smart_proxy)
+    ProxyAPI::Template.any_instance.stubs(:template_url).returns(host.provision_interface.subnet.template.url)
     @renderer.host = host
-    assert_match(host.provision_interface.subnet.tftp.url, @renderer.foreman_url)
+    assert_match(host.provision_interface.subnet.template.url, @renderer.foreman_url)
   end
 
   test "foreman_url should run with @host as nil" do
@@ -162,6 +162,42 @@ EOS
       send "setup_#{renderer_name}"
       tmpl = @renderer.render_safe('<%= indent(3) { "test" } %>', [:indent])
       assert_equal '   test', tmpl
+    end
+
+    test "global_setting helper method" do
+      send "setup_#{renderer_name}"
+      Setting[:default_pxe_item_global] = "PASS"
+      tmpl = @renderer.render_safe('<%= global_setting("default_pxe_item_global") %>', [:global_setting])
+      assert_equal 'PASS', tmpl
+    end
+
+    test "global_setting helper method with special case 'false'" do
+      send "setup_#{renderer_name}"
+      Setting[:default_pxe_item_global] = false
+      tmpl = @renderer.render_safe('<%= global_setting("default_pxe_item_global") %>', [:global_setting])
+      assert_equal '', tmpl
+    end
+
+    test "global_setting helper method with symbol" do
+      send "setup_#{renderer_name}"
+      Setting[:default_pxe_item_global] = "PASS"
+      tmpl = @renderer.render_safe('<%= global_setting(:default_pxe_item_global) %>', [:global_setting])
+      assert_equal 'PASS', tmpl
+    end
+
+    test "global_setting helper method with own default" do
+      send "setup_#{renderer_name}"
+      Setting[:default_pxe_item_global] = ""
+      tmpl = @renderer.render_safe('<%= global_setting("default_pxe_item_global", "PASS") %>', [:global_setting])
+      assert_equal 'PASS', tmpl
+    end
+
+    test "global_setting helper default does not work with boolean" do
+      send "setup_#{renderer_name}"
+      Setting[:update_ip_from_built_request] = false
+      assert_equal "boolean", Setting.find_by_name("update_ip_from_built_request").settings_type
+      tmpl = @renderer.render_safe('<%= global_setting("update_ip_from_built_request", "FAIL").to_s %>', [:global_setting])
+      assert_equal 'false', tmpl
     end
 
     test "dns_lookup helper method - address" do
@@ -416,6 +452,13 @@ EOS
 
   test 'templates_used is allowed to render for host' do
     assert Safemode.find_jail_class(Host::Managed).allowed? :templates_used
+  end
+
+  test "global_setting unsafe attempt" do
+    assert_raises(Foreman::Renderer::FilteredGlobalSettingAccessed) do
+      setup_safemode_renderer
+      @renderer.render_safe('<%= global_setting("not_allowed_setting") %>', [:global_setting])
+    end
   end
 
   private

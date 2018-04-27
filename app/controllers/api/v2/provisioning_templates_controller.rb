@@ -5,6 +5,7 @@ module Api
       include Foreman::Renderer
       include Foreman::Controller::ProvisioningTemplates
       include Foreman::Controller::Parameters::ProvisioningTemplate
+      include Foreman::Controller::TemplateImport
 
       before_action :find_optional_nested_object
       before_action :find_resource, :only => %w{show update destroy clone export}
@@ -55,12 +56,25 @@ module Api
         process_response @provisioning_template.save
       end
 
+      api :POST, "/provisioning_templates/import", N_("Import a provisioning template")
+      param :provisioning_template, Hash, :required => true, :action_aware => true do
+        param :name, String, :required => true, :desc => N_("template name")
+        param :template, String, :required => true, :desc => N_("template contents including metadata")
+        param_group :taxonomies, ::Api::V2::BaseController
+      end
+      param_group :template_import_options, ::Api::V2::BaseController
+
+      def import
+        @provisioning_template = ProvisioningTemplate.import!(*import_attrs_for(:provisioning_template))
+        process_response @provisioning_template
+      end
+
       api :PUT, "/provisioning_templates/:id", N_("Update a provisioning template")
       param :id, :identifier, :required => true
       param_group :provisioning_template
 
       def update
-        process_response @provisioning_template.update_attributes(provisioning_template_params)
+        process_response @provisioning_template.update(provisioning_template_params)
       end
 
       api :GET, "/provisioning_templates/revision"
@@ -133,7 +147,7 @@ module Api
 
       def action_permission
         case params[:action]
-          when 'clone'
+          when 'clone', 'import'
             'create'
           when 'export'
             'view'

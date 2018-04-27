@@ -221,7 +221,7 @@ module ApplicationHelper
 
   def searchable?
     return false if (SETTINGS[:login] && !User.current) || @welcome || @missing_permissions
-    if (controller.action_name == "index") || (defined?(SEARCHABLE_ACTIONS) && (SEARCHABLE_ACTIONS.include?(controller.action_name)))
+    if (controller.action_name == "index") || (defined?(SEARCHABLE_ACTIONS) && SEARCHABLE_ACTIONS.include?(controller.action_name))
       controller.respond_to?(:auto_complete_search)
     end
   end
@@ -265,23 +265,23 @@ module ApplicationHelper
   end
 
   def flot_pie_chart(name, title, data, options = {})
-    data = data.map { |k,v| {:label=>k.to_s.humanize, :data=>v} } if data.is_a?(Hash)
-    data.map{|element| element[:label] = truncate(element[:label],:length => 16)}
-    header = content_tag(:h4,options[:show_title] ? title : '', :class=>'ca pie-title', :'data-original-title'=>_("Expand the chart"), :rel=>'twipsy')
+    data = data.map { |k, v| {:label=>k.to_s.humanize, :data=>v} } if data.is_a?(Hash)
+    data.map{|element| element[:label] = truncate(element[:label], :length => 16)}
+    header = content_tag(:h4, options[:show_title] ? title : '', :class=>'ca pie-title', :'data-original-title'=>_("Expand the chart"), :rel=>'twipsy')
     link_to_function(header, "expand_chart(this)")+
         content_tag(:div, nil,
                     { :id    => name,
                       :class => 'statistics-pie',
                       :data  => {
-                        :'title'  => title,
-                        :'series' => data,
-                        :'url'    => options[:search] ? "#{request.script_name}/hosts?search=#{URI.encode(options.delete(:search))}" : "#"
+                        :title  => title,
+                        :series => data,
+                        :url    => options[:search] ? "#{request.script_name}/hosts?search=#{URI.encode(options.delete(:search))}" : "#"
                       }
                     }.merge(options))
   end
 
   def flot_chart(name, xaxis_label, yaxis_label, data, options = {})
-    data = data.map { |k,v| {:label=>k.to_s.humanize, :data=>v} } if data.is_a?(Hash)
+    data = data.map { |k, v| {:label=>k.to_s.humanize, :data=>v} } if data.is_a?(Hash)
     content_tag(:div, nil,
                 { :id    => name,
                   :class => 'statistics-chart',
@@ -289,7 +289,7 @@ module ApplicationHelper
                     :'legend-options' => options.delete(:legend),
                     :'xaxis-label'    => xaxis_label,
                     :'yaxis-label'    => yaxis_label,
-                    :'series'         => data
+                    :series         => data
                   }
                 }.merge(options))
   end
@@ -300,14 +300,14 @@ module ApplicationHelper
     if data.is_a?(Array)
       data = data.map do |kv|
         ticks ||=[]
-        ticks << [i+=1,kv[0].to_s.humanize ]
-        [i,kv[1]]
+        ticks << [i+=1, kv[0].to_s.humanize ]
+        [i, kv[1]]
       end
     elsif  data.is_a?(Hash)
-      data = data.map do |k,v|
+      data = data.map do |k, v|
         ticks ||=[]
-        ticks << [i+=1,k.to_s.humanize ]
-        [i,v]
+        ticks << [i+=1, k.to_s.humanize ]
+        [i, v]
       end
     end
 
@@ -316,8 +316,8 @@ module ApplicationHelper
                   :data => {
                     :'xaxis-label' => xaxis_label,
                     :'yaxis-label' => yaxis_label,
-                    :'chart'   => data,
-                    :'ticks'   => ticks
+                    :chart   => data,
+                    :ticks   => ticks
                   }
                 }.merge(options))
   end
@@ -330,10 +330,10 @@ module ApplicationHelper
     button_classes << 'btn-primary' if options[:primary]
 
     content_tag(:div, options.merge(:class=>'btn-group')) do
-      #single button
+      # single button
       if args.length == 1
         content_tag(:span, args[0], :class => button_classes).html_safe
-      #multiple options
+      # multiple options
       else
         button_classes << 'dropdown-toggle'
         title = (title + " " + content_tag(:span, '', :class => 'caret'))
@@ -341,7 +341,7 @@ module ApplicationHelper
                          :class => button_classes,
                          :'data-toggle' => 'dropdown')
         dropdown_list = content_tag(:ul, :class=>"dropdown-menu pull-right") do
-          args.map { |option| content_tag(:li,option) }.join(" ").html_safe
+          args.map { |option| content_tag(:li, option) }.join(" ").html_safe
         end
         button + dropdown_list
       end
@@ -353,17 +353,17 @@ module ApplicationHelper
     args = args.flatten.select(&:present?)
     return if args.blank?
 
-    #single button
+    # single button
     return content_tag(:span, args[0].html_safe, :class=>'btn btn-sm btn-default') if args.length == 1
 
-    #multiple buttons
+    # multiple buttons
     primary = args.delete_at(0).html_safe
     primary = content_tag(:span, primary, :class=>'btn btn-sm btn-default') if primary !~ /btn/
 
-    content_tag(:div,:class => "btn-group") do
-      primary + link_to(content_tag(:span, '', :class=>'caret'),'#', :class=>"btn btn-default #{'btn-sm' if primary =~ /btn-sm/} dropdown-toggle", :'data-toggle'=>'dropdown') +
-      content_tag(:ul,:class=>"dropdown-menu pull-right") do
-        args.map{|option| content_tag(:li,option)}.join(" ").html_safe
+    content_tag(:div, :class => "btn-group") do
+      primary + link_to(content_tag(:span, '', :class=>'caret'), '#', :class=>"btn btn-default #{'btn-sm' if primary =~ /btn-sm/} dropdown-toggle", :'data-toggle'=>'dropdown') +
+      content_tag(:ul, :class=>"dropdown-menu pull-right") do
+        args.map{|option| content_tag(:li, option)}.join(" ").html_safe
       end
     end
   end
@@ -394,7 +394,7 @@ module ApplicationHelper
     obj.class.model_name.to_s.tableize.singularize
   end
 
-  def class_in_environment?(environment,puppetclass)
+  def class_in_environment?(environment, puppetclass)
     return false unless environment
     environment.puppetclasses.map(&:id).include?(puppetclass.id)
   end
@@ -537,7 +537,7 @@ module ApplicationHelper
 
   def user_set?(field)
     # if the host has no hostgroup
-    return true unless @host && @host.hostgroup
+    return true unless @host&.hostgroup
     # when editing a host, the values are specified explicitly
     return true if params[:action] == 'edit'
     return true if params[:action] == 'clone'
@@ -546,13 +546,18 @@ module ApplicationHelper
   end
 
   def notifications
-    content_tag :div, :id => 'notifications', :'data-flash' => flash_notifiations.to_json.html_safe do
-      mount_react_component('ToastNotifications', '#notifications')
+    content_tag :div, id: 'toast-notifications-container',
+                      'data-notifications': toast_notifiations_data.to_json.html_safe do
+      mount_react_component('ToastNotifications', '#toast-notifications-container')
     end
   end
 
-  def flash_notifiations
-    flash.select { |key, _| key != 'inline' }
+  def toast_notifiations_data
+    selected_toast_notifiations =  flash.select { |key, _| key != 'inline' }
+
+    selected_toast_notifiations.map do |type, notification|
+      notification.is_a?(Hash) ? notification : { :type => type, :message => notification }
+    end
   end
 
   def flash_inline
@@ -565,6 +570,6 @@ module ApplicationHelper
   end
 
   def current_url_params(permitted: [])
-    params.permit(permitted + [:locale, :search, :per_page])
+    params.slice(*permitted.concat([:locale, :search, :per_page])).permit!
   end
 end

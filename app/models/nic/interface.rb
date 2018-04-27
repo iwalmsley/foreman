@@ -38,10 +38,27 @@ module Nic
       # user's database. There is no way of determining the real vlanid, so we
       # pick the v4 one unless it turns out to be blank.
 
-      return self.tag unless self.tag.blank?
+      return self.tag if self.tag.present?
       return self.subnet.vlanid if self.subnet && self.subnet.vlanid.present?
       return self.subnet6.vlanid if self.subnet6 && self.subnet6.vlanid.present?
       ''
+    end
+
+    def mtu
+      # Determine a mtu according to the following cascading rules:
+      # 1. if the interface has a v4 subnet with a non-blank mtu, use that
+      # 2. if the interface has a v6 subnet with a non-blank mtu, use that
+      # 3. if no reasonable mtu was determined, then return nil
+      #
+      # In case the v4 and v6 subnet are both present, they should have the same
+      # mtu. If they have a different mtu, this is probably an error in the
+      # user's database. There is no way of determining the real mtu, so we
+      # pick the v4 one unless it turns out to be blank.
+
+      return self.attrs['mtu'] if self.attrs['mtu'].present?
+      return self.subnet.mtu if self.subnet && self.subnet.mtu.present?
+      return self.subnet6.mtu if self.subnet6 && self.subnet6.mtu.present?
+      nil
     end
 
     def bridge?
@@ -56,14 +73,14 @@ module Nic
       self.virtual? && self.identifier.present? && self.identifier.include?(':')
     end
 
-    def fqdn_changed?
-      name_changed? || domain_id_changed?
+    def saved_change_to_fqdn?
+      saved_change_to_name? || saved_change_to_domain_id?
     end
 
-    def fqdn_was
-      domain_was = Domain.find(domain_id_was) unless domain_id_was.blank?
-      return name_was if name_was.blank? || domain_was.blank?
-      name_was.include?('.') ? name_was : "#{name_was}.#{domain_was}"
+    def fqdn_before_last_save
+      domain_before_last_save = Domain.find(domain_id_before_last_save) if domain_id_before_last_save.present?
+      return name_before_last_save if name_before_last_save.blank? || domain_before_last_save.blank?
+      name_before_last_save.include?('.') ? name_before_last_save : "#{name_before_last_save}.#{domain_before_last_save}"
     end
 
     protected
@@ -105,7 +122,7 @@ module Nic
       # no hostname was given or a domain was selected, since this is before validation we need to ignore
       # it and let the validations to produce an error
       return if name.empty?
-      if domain.nil? && name.include?('.') && changed_attributes['domain_id'].blank?
+      if domain_id.nil? && name.include?('.') && changed_attributes['domain_id'].blank?
         # try to assign the domain automatically based on our existing domains from the host FQDN
         self.domain = Domain.find_by(:name => name.partition('.')[2])
       elsif persisted? && changed_attributes['domain_id'].present?
@@ -118,7 +135,7 @@ module Nic
       self.name = fqdn
       # A managed host we should know the domain for; and the shortname shouldn't include a period
       # This only applies for unattended=true, as otherwise the name field includes the domain
-      errors.add(:name, _("must not include periods")) if (host && host.managed? && managed? && shortname.include?(".") && SETTINGS[:unattended])
+      errors.add(:name, _("must not include periods")) if (host&.managed? && managed? && shortname.include?(".") && SETTINGS[:unattended])
       self.name = Net::Validations.normalize_hostname(name) if self.name.present?
     end
   end

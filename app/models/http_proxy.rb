@@ -1,9 +1,8 @@
 class HttpProxy < ApplicationRecord
+  audited
   include Authorizable
   include Taxonomix
   include Encryptable
-
-  audited
 
   extend FriendlyId
 
@@ -22,8 +21,8 @@ class HttpProxy < ApplicationRecord
 
   def full_url
     uri = URI(url)
-    uri.user = username unless username.blank?
-    uri.password = password unless username.blank?
+    uri.user = username if username.present?
+    uri.password = password if username.present?
     uri.to_s
   end
 

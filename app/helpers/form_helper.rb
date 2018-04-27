@@ -117,7 +117,7 @@ module FormHelper
       # if the method is to_s, OpenStruct will respond with its own version.
       # in this case, I need to undefine its own alias to to_s, and use the attribute
       # that was defined in the struct.
-      blank_option.instance_eval('undef to_s') if method.to_s == 'to_s' || id.to_s == 'to_s'
+      blank_option.instance_eval('undef to_s', __FILE__, __LINE__) if method.to_s == 'to_s' || id.to_s == 'to_s'
       array.insert(0, blank_option)
     end
 
@@ -322,7 +322,7 @@ module FormHelper
     label_size = options.delete(:label_size) || "col-md-2"
     required_mark = check_required(options, f, attr)
     label = ''.html_safe + options.delete(:label)
-    if label.empty? && f.try(:object) && ((clazz = f.object.class).respond_to?(:gettext_translation_for_attribute_name))
+    if label.empty? && f.try(:object) && (clazz = f.object.class).respond_to?(:gettext_translation_for_attribute_name)
       label = s_(clazz.gettext_translation_for_attribute_name(attr)).titleize.html_safe
     end
 
@@ -362,7 +362,7 @@ module FormHelper
       render((partial.nil? ? association.to_s.singularize + "_fields" : partial), :f => builder)
     end
     options[:class] = link_to_add_fields_classes(options)
-    link_to_function(name, ("add_fields('#{options[:target]}', '#{association}', '#{escape_javascript(fields)}')").html_safe, options)
+    link_to_function(name, "add_fields('#{options[:target]}', '#{association}', '#{escape_javascript(fields)}')".html_safe, options)
   end
 
   def field(f, attr, options = {})

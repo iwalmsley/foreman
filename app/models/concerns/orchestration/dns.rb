@@ -55,7 +55,7 @@ module Orchestration::DNS
   end
 
   def queue_dns
-    return unless (dns? || dns6? || reverse_dns? || reverse_dns6?) && errors.empty?
+    return log_orchestration_errors unless (dns? || dns6? || reverse_dns? || reverse_dns6?) && errors.empty?
     queue_remove_dns_conflicts if overwrite?
     new_record? ? queue_dns_create : queue_dns_update
   end
@@ -113,7 +113,7 @@ module Orchestration::DNS
         status = failure(_("%{type} %{conflicts} already exists") % {:conflicts => conflicts.to_sentence, :type => dns_class(record_type).human(conflicts.count)}, nil, :conflict)
       end
     end
-    !status #failure method returns 'false'
+    !status # failure method returns 'false'
   rescue Net::Error => e
     if domain.nameservers.empty?
       failure(_("Error connecting to system DNS server(s) - check /etc/resolv.conf"), e)
